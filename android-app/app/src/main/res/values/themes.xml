@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- DayNight：跟随系统 / App 内手动切换都走这套 -->
+    <!-- DayNight：跟随系统 / App 内手动切换都走这套
+
+         注意：android:windowLightNavigationBar 是 API 27 才有的属性，而本项目
+         minSdk = 24。它被放在 values-v27/ 里，这里**不要**加回来 ——
+         在 API 24~26 上设一个当时还不存在的框架属性，遇到自己定义了同名属性 ID
+         的厂商 ROM 会冲突。 -->
     <style name="Theme.CampusRun" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="colorPrimary">@color/accent</item>
@@ -10,8 +15,8 @@
         <item name="android:textColorSecondary">@color/fg_dim</item>
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
+        <!-- windowLightStatusBar 是 API 23，minSdk 24 已经覆盖 -->
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:colorControlActivated">@color/accent</item>
     </style>
 

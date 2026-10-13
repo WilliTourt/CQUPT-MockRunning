@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 27+ 专用的浅色主题。
+
+  android:windowLightNavigationBar 到 API 27 才存在，所以单独放这一份；
+  values/ 里那份不含该属性，供 API 24~26 使用。
+
+  注意：style 在不同资源限定符之间**不会合并**，这里是完整定义，
+  改 values/themes.xml 时记得同步这一份。
+-->
+<resources>
+    <style name="Theme.CampusRun" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@color/bg</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/fg</item>
+        <item name="android:textColorSecondary">@color/fg_dim</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorControlActivated">@color/accent</item>
+    </style>
+</resources>

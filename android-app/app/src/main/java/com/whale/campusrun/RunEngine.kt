@@ -46,6 +46,8 @@ data class RunState(
     val elapsedSec: Int = 0,
     val etaSec: Int = -1,
     val paceSecKm: Double = 0.0,
+    val paceLo: Double = 0.0,
+    val paceHi: Double = 0.0,
     val batchesDone: Int = 0,
     val batchesTotal: Int = 0,
     val serverMileage: Double = -1.0,
@@ -95,18 +97,34 @@ class RunEngine(private val api: Api, private val l: RunListener) {
 
     @Volatile private var cancel = false
 
+    /** 连接器层面的硬失败（服务器不可达）。界面据此弹「无法连接到服务器」。 */
+    @Volatile var netFail = false
+        private set
+
     fun cancel() {
         cancel = true
     }
 
     // ---------------------------------------------------------------- ①
 
+    /**
+     * 换 token。
+     *
+     * 这里的失败分两种，界面要区别对待：
+     *   · 网络层失败（连不上服务器）→ 弹「无法连接到服务器」
+     *   · 业务层失败（openid 无效 / 未绑定）→ 提示去小程序重新绑定
+     * 原来的实现把"服务器不可达"和"openid 不对"都塞进 [lastError]，
+     * 界面上根本分不出来。
+     */
     fun connect(openid: String): Boolean {
         api.reset(openid)
+        netFail = false
         l.log("① 换取 token ...")
         val j = api.checkBinding(openid)
         if (j == null) {
-            l.log("   ✗ 网络失败：${api.lastError}")
+            l.log("   ✗ 无法连接到服务器：${api.lastError}")
+            l.log("     检查手机网络 / 校园网是否可达 sport.cqupt.edu.cn")
+            netFail = true
             return false
         }
         val r = Resp.of(j)
@@ -129,7 +147,12 @@ class RunEngine(private val api: Api, private val l: RunListener) {
 
     fun fetchRule(): Rule? {
         l.log("② 拉取跑步规则 ...")
-        val r = Resp.of(api.getRule())
+        val j = api.getRule()
+        if (j == null) {
+            l.log("   ✗ 无法连接到服务器：${api.lastError}")
+            return null
+        }
+        val r = Resp.of(j)
         if (!r.ok) {
             l.log("   ✗ code=${r.code} ${r.msg}")
             return null
@@ -152,10 +175,18 @@ class RunEngine(private val api: Api, private val l: RunListener) {
      */
     fun fetchAreas(): List<Area> {
         l.log("③ 拉取场地 ...")
+        netFail = false
 
         // 可跑步场地：sportsItem == "0"（跑步），其余是球馆/游泳馆
         val runnable = LinkedHashMap<String, String>()
-        val pr = Resp.of(api.getPlayground())
+        val pj = api.getPlayground()
+        if (pj == null) {
+            l.log("   ✗ 无法连接到服务器：${api.lastError}")
+            l.log("     检查手机网络 / 校园网是否可达 sport.cqupt.edu.cn")
+            netFail = true
+            return emptyList()
+        }
+        val pr = Resp.of(pj)
         if (pr.ok) {
             val arr = pr.data as? JSONArray ?: JSONArray()
             for (i in 0 until arr.length()) {
@@ -166,10 +197,16 @@ class RunEngine(private val api: Api, private val l: RunListener) {
             }
             l.log("   可跑步场地 ${runnable.size} 个")
         } else {
-            l.log("   ⚠ 场地表拉取失败（${pr.code}），不过滤")
+            l.log("   ⚠ 场地表拉取失败（${pr.code} ${pr.msg}），不过滤")
         }
 
-        val r = Resp.of(api.getAllArea())
+        val aj = api.getAllArea()
+        if (aj == null) {
+            l.log("   ✗ 无法连接到服务器：${api.lastError}")
+            netFail = true
+            return emptyList()
+        }
+        val r = Resp.of(aj)
         if (!r.ok) {
             l.log("   ✗ code=${r.code} ${r.msg}")
             return emptyList()
@@ -223,7 +260,12 @@ class RunEngine(private val api: Api, private val l: RunListener) {
     // ---------------------------------------------------------------- 统计
 
     fun fetchStats(): Stats? {
-        val r = Resp.of(api.getSportsResult())
+        val j = api.getSportsResult()
+        if (j == null) {
+            l.log("✗ 无法连接到服务器：${api.lastError}")
+            return null
+        }
+        val r = Resp.of(j)
         if (!r.ok) {
             l.log("✗ 统计拉取失败 code=${r.code} ${r.msg}")
             return null
@@ -277,6 +319,7 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         realtime: Boolean,
         noise: Double,
         seed: Int,
+        profile: PaceProfile = PaceProfile.NATURAL,
         validate: Boolean = true
     ) {
         cancel = false
@@ -300,8 +343,11 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         push()
 
         val t0 = System.currentTimeMillis()
-        val track = TrackGen.generate(area.fence, area.excludes, paceSecKm, targetM, noise, seed)
+        val track = TrackGen.generate(
+            area.fence, area.excludes, paceSecKm, targetM, noise, seed, profile
+        )
         l.log("   ${TrackGen.summarize(track)}  (耗时 ${System.currentTimeMillis() - t0} ms)")
+        val paceRange = paceRangeOf(track)
 
         if (validate) {
             val inside = track.count { Geo.pointInPoly(it.lat, it.lon, area.fence) }
@@ -367,10 +413,17 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         l.log("⑥ 上传轨迹点 ...")
         val startMs = System.currentTimeMillis()
         val startWall = SystemClock.elapsedRealtime()
-        val points = buildPoints(track, recordNo, area, startMs)
+        val valid = validFlags(track, area)
+        val banned = valid.count { !it }
+        val points = buildPoints(track, valid, recordNo, area, startMs)
         val batches = batch(points, Api.POINT_BATCH)
+        val totalSec = track.size - 1
         l.log("   共 ${points.size} 点 → ${batches.size} 批（每批 ${Api.POINT_BATCH}，末点作下批首点）")
-        l.log("   预计耗时 ${fmtDuration(track.size - 1)}，退出 App 不会中断，但别划掉它")
+        l.log("   轨迹时长 ${fmtDuration(totalSec)}（服务端按 collectTime 跨度算时长），"
+                + "退出 App 不会中断，但别划掉它")
+        if (banned > 0) {
+            l.log("   ⚠ 其中 $banned 点落在禁跑区，已按小程序语义标记 isValid=\"2\"（不计里程）")
+        }
 
         var uploadedPoints = 0
         var uploadedMeters: Double
@@ -386,7 +439,11 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         }
 
         state = state.copy(
-            phase = "上传中", pointsTotal = points.size, batchesTotal = batches.size
+            phase = "上传中",
+            pointsTotal = points.size,
+            batchesTotal = batches.size,
+            paceLo = paceRange.first,
+            paceHi = paceRange.second
         )
         push()
 
@@ -424,27 +481,16 @@ class RunEngine(private val api: Api, private val l: RunListener) {
                             fmtDuration(((SystemClock.elapsedRealtime() - startWall) / 1000).toInt())))
             }
 
-            val elapsed = ((SystemClock.elapsedRealtime() - startWall) / 1000).toInt()
-            val totalSec = track.size - 1
-            val remain = maxOf(0, totalSec - elapsed)
-            state = state.copy(
-                pointsDone = uploadedPoints,
-                metersDone = if (serverMileage >= 0) serverMileage * 1000 else uploadedMeters,
-                elapsedSec = elapsed,
-                etaSec = remain,
-                batchesDone = i + 1,
-                serverMileage = serverMileage,
-                serverSeconds = serverSeconds
-            )
-            push()
-
             if (realtime && i < batches.size - 1) {
-                // 这批要"占掉" b.size 秒（每点 1 秒），按同样的节奏等待。
+                // 这一批要"占掉"的时长 = **本批末点的 secOffset**，不是批大小。
+                // 相邻两批共享一个点（末点作下批首点），所以两批之间只跨 size-1 秒；
+                // 按批大小等会把整轮拖长约 14%（690 点 / 每批 8 时多等 95 秒），
+                // 服务端按 collectTime 跨度算时长，多出来的等待全都会记到配速里。
                 //
                 // 关键：用 elapsedRealtime 量真实时间，而不是"睡了几次 × 250ms"。
                 // 息屏 / Doze 时 Thread.sleep 会睡过头，按次数算的话整轮会被拖长一倍多 ——
                 // 表现就是"进度条不动，只有用时在涨"。
-                val target = SystemClock.elapsedRealtime() + b.size * 1000L
+                val target = startWall + track[uploadedPoints - 1].secOffset * 1000L
                 var lastPush = SystemClock.elapsedRealtime()
                 while (!cancel) {
                     val remainMs = target - SystemClock.elapsedRealtime()
@@ -459,6 +505,18 @@ class RunEngine(private val api: Api, private val l: RunListener) {
                     }
                 }
             }
+
+            val elapsed = ((SystemClock.elapsedRealtime() - startWall) / 1000).toInt()
+            state = state.copy(
+                pointsDone = uploadedPoints,
+                metersDone = if (serverMileage >= 0) serverMileage * 1000 else uploadedMeters,
+                elapsedSec = elapsed,
+                etaSec = maxOf(0, totalSec - elapsed),
+                batchesDone = i + 1,
+                serverMileage = serverMileage,
+                serverSeconds = serverSeconds
+            )
+            push()
         }
 
         if (cancel) {
@@ -506,9 +564,29 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         return if (v == "null") "" else v
     }
 
-    private fun buildPoints(track: List<TrackPoint>, recordNo: String, area: Area, startMs: Long): List<JSONObject> {
+    /**
+     * 每个点该填的 isValid。小程序语义（见 refs/FINDINGS.md 4.1）：
+     *   "1" = 正常
+     *   "2" = 落在禁跑区（jpq），服务端 calcDistance 返回 0，不计里程
+     *
+     * 原来这里无脑写 "1"，和上面自检打出来的 banned 计数自相矛盾。
+     * 轨迹内缩后 banned 正常就是 0，但真出现时不应该瞒着服务端。
+     */
+    private fun validFlags(track: List<TrackPoint>, area: Area): BooleanArray =
+        BooleanArray(track.size) { i ->
+            val p = track[i]
+            !area.excludes.any { Geo.pointInPoly(p.lat, p.lon, it) }
+        }
+
+    private fun buildPoints(
+        track: List<TrackPoint>,
+        valid: BooleanArray,
+        recordNo: String,
+        area: Area,
+        startMs: Long
+    ): List<JSONObject> {
         val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA)
-        return track.map { p ->
+        return track.mapIndexed { i, p ->
             JSONObject().apply {
                 put("sportRecordNo", recordNo)
                 put("longitude", p.lon)
@@ -516,9 +594,33 @@ class RunEngine(private val api: Api, private val l: RunListener) {
                 put("placeName", area.placeName)
                 put("placeCode", area.placeCode)
                 put("collectTime", fmt.format(Date(startMs + p.secOffset * 1000L)))
-                put("isValid", "1")
+                put("isValid", if (valid[i]) "1" else "2")
             }
         }
+    }
+
+    /**
+     * 15 秒滚动窗口的配速区间 (最快, 最慢)，秒/公里。
+     *
+     * 逐秒的瞬时配速在停顿处趋于无穷，取极值没意义；滚动窗口才对应
+     * "跑者感受到的配速"。界面用它显示"分段配速 X ~ Y"。
+     */
+    private fun paceRangeOf(track: List<TrackPoint>, win: Int = 15): Pair<Double, Double> {
+        if (track.size <= win + 1) return Pair(0.0, 0.0)
+        var fastest = Double.MAX_VALUE
+        var slowest = 0.0
+        for (i in 0..track.size - 1 - win) {
+            var seg = 0.0
+            for (k in i until i + win) {
+                seg += Geo.hav(track[k].lat, track[k].lon, track[k + 1].lat, track[k + 1].lon)
+            }
+            if (seg <= 0.1) continue
+            val p = win / (seg / 1000.0)
+            if (p < fastest) fastest = p
+            if (p > slowest) slowest = p
+        }
+        if (fastest == Double.MAX_VALUE) return Pair(0.0, 0.0)
+        return Pair(fastest, slowest)
     }
 
     /** 与小程序一致：每 n 个点一批，并把上一批的末点作为下一批的首点。 */

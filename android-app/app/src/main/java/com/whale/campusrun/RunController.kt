@@ -62,7 +62,8 @@ object RunController {
         paceSecKm: Double,
         targetM: Double,
         noise: Double,
-        seed: Int
+        seed: Int,
+        profile: PaceProfile = PaceProfile.NATURAL
     ) {
         if (running) return
         running = true
@@ -86,7 +87,8 @@ object RunController {
                     targetM = targetM,
                     realtime = true,          // 服务端按墙钟算配速，必须实时
                     noise = noise,
-                    seed = seed
+                    seed = seed,
+                    profile = profile
                 )
             } catch (t: Throwable) {
                 log("✗ 运行异常：${t.javaClass.name}: ${t.message}")
