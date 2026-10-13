@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 的可见范围：只暴露 cache/share/ 这一个目录 -->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

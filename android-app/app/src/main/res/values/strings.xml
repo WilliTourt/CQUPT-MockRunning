@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 名字 -->
+    <string name="app_name">鲸鲸约跑</string>
+    <string name="app_title">鲸鲸约跑</string>
+    <string name="app_tag">CAMPUS RUN</string>
+    <string name="app_sub">替你跑完这两公里 · 你只管去刷脸</string>
+    <string name="app_author" translatable="false">WilliTourt的蓝色大肥鱼</string>
+    <string name="credit">由 WilliTourt的蓝色大肥鱼 🐟 编写</string>
+
+    <!-- 主题切换 -->
+    <string name="theme_auto">🌗 自动</string>
+    <string name="theme_dark">🌙 深色</string>
+    <string name="theme_light">☀ 浅色</string>
+    <string name="theme_hint">主题</string>
+
+    <!-- 电池优化 -->
+    <string name="batt_unknown">检查后台保活状态…</string>
+    <string name="batt_title">让它在后台跑稳</string>
+    <string name="batt_msg">安卓深度省电（Doze）会冻结后台的 CPU 和网络，连 CPU 唤醒锁都会忽略。表现就是：你把 App 揣兜里息屏，进度条还在走但慢得像爬，只有用时在涨。\n\n点「去设置」，系统会弹窗问「允许应用始终在后台运行吗」，选「允许」。\n\n设完按返回键回到这里，本条会自动变绿，不用重启 App。\n\n只需要设置一次。</string>
+    <string name="batt_go">去设置</string>
+    <string name="batt_ok">已在电池优化白名单里 —— 息屏后台不会被冻结</string>
+    <string name="batt_ok_tip">已在电池优化白名单\n息屏后台不会被冻结，可以放心揣兜里</string>
+    <string name="batt_bad">⚠ 未加入电池优化白名单\n息屏后系统可能冻结后台，进度会变慢。\n点这里去设置，允许后返回本页会自动变绿</string>
+
+    <!-- 标签页（分段控件） -->
+    <string name="tab_run">打卡</string>
+    <string name="tab_stats">统计</string>
+    <string name="tab_help">取码</string>
+
+    <!-- 取码页 -->
+    <string name="help_title">openid 是什么</string>
+    <string name="help_body">你在「重邮智慧体育」小程序里的身份编号。换登录凭证只需要这一个东西，所以拿一次就能长期用。\n\n【为什么手机拿不到？】\n它存在微信自己的私有数据里，普通 App 没权限读（除非手机已 root）。而电脑版微信 4.x 把小程序跑在 Chromium 里，请求缓存是明文 JSON，所以能直接读出来 —— 这就是下面这段脚本干的事。</string>
+    <string name="help_steps">怎么用\n1. 电脑装 Python 3（python.org，安装时勾 Add to PATH）\n2. 电脑微信打开一次「重邮智慧体育」，完成登录绑定\n3. 把下面的脚本存成 get_openid.py\n4. 双击运行（或命令行 python get_openid.py）\n5. 输出里的 openid 填进【打卡】页</string>
+    <string name="help_note">读的是 HTTP 缓存，不是数据库文件，所以不用退出微信。</string>
+    <string name="b_copy_script">复制脚本</string>
+    <string name="b_share_script">分享脚本</string>
+    <string name="b_view_script">展开 / 收起脚本</string>
+    <string name="copied">已复制到剪贴板</string>
+    <string name="l_script">get_openid.py</string>
+
+    <!-- 打卡面板 -->
+    <string name="l_openid">openid</string>
+    <string name="h_openid">粘贴你的 openid</string>
+    <string name="h_openid_tip">电脑上跑一遍 python get_openid.py 就能读出来，不用抓包。</string>
+    <string name="b_connect">连接并拉取场地</string>
+    <string name="l_area">跑步区域</string>
+    <string name="l_pace">配速 (分:秒 / km)</string>
+    <string name="l_dist">距离 (km)</string>
+    <string name="b_run">开始打卡</string>
+    <string name="b_stop">结束打卡</string>
+    <string name="b_clear">清空</string>
+    <string name="b_share">导出</string>
+    <string name="l_log">运行日志</string>
+
+    <string name="realtime_note">上传节奏会自动对齐配速 —— 服务端的配速是按「开始到结束的真实耗时」算的，所以整个过程会持续「距离 ÷ 配速」那么久。2 公里约 11.5 分钟，正好够你在操场挨个摄像头刷脸。中途可以退出 App、锁屏、切走，进程有前台服务守着，回来进度不会丢。</string>
+
+    <!-- 仪表盘 -->
+    <string name="dash_progress">进度</string>
+    <string name="dash_idle_distance">已跑 0.00 / 0.00 km</string>
+    <string name="dash_idle_time">用时 --:--　剩余 --:--</string>
+    <string name="dash_idle_pace">配速 --　·　状态 空闲</string>
+    <string name="dash_idle_batch">批次 0/0　·　点位 0/0</string>
+    <string name="dash_idle_server">服务端累计 --</string>
+
+    <!-- 统计面板 -->
+    <string name="b_refresh_stats">刷新统计</string>
+    <string name="stats_hint">点上面的按钮拉取成绩</string>
+    <string name="stats_dash">—</string>
+    <string name="l_stats_place">各场地次数</string>
+    <string name="l_stats_list">最近记录</string>
+    <string name="dlg_cancel">取消</string>
+</resources>

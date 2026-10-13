@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 浅色主题（默认）。深色在 values-night/colors.xml -->
+<resources>
+    <color name="bg">#F2F5FA</color>
+    <color name="fg">#16202F</color>
+    <color name="fg_dim">#68788E</color>
+    <color name="accent">#2F7FE0</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="box">#FFFFFF</color>
+    <color name="box_stroke">#D9E2EF</color>
+    <color name="log">#41536B</color>
+    <color name="ok">#0E8F55</color>
+    <color name="ok_bg">#E4F6EC</color>
+    <color name="ok_stroke">#8FD9B4</color>
+    <color name="danger">#D14343</color>
+    <color name="danger_bg">#1AD14343</color>
+    <color name="danger_box_bg">#FCEBEB</color>
+    <color name="danger_stroke">#F0AEAE</color>
+</resources>

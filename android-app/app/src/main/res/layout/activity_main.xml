@@ -1,0 +1,631 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- ═══════════ 头部 ═══════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="bottom"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:letterSpacing="0.02"
+                        android:text="@string/app_title"
+                        android:textColor="@color/accent"
+                        android:textSize="31sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_marginBottom="4dp"
+                        android:letterSpacing="0.3"
+                        android:text="@string/app_tag"
+                        android:textColor="@color/fg_dim"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:letterSpacing="0.05"
+                    android:text="@string/app_sub"
+                    android:textColor="@color/fg_dim"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <!-- 明暗主题切换：点一下循环 自动 → 深色 → 浅色 -->
+            <TextView
+                android:id="@+id/tvTheme"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/box"
+                android:gravity="center"
+                android:minWidth="62dp"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="@string/theme_auto"
+                android:textColor="@color/fg_dim"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- ═══════════ 分段标签栏 ═══════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/seg_container"
+            android:orientation="horizontal"
+            android:padding="4dp">
+
+            <TextView
+                android:id="@+id/tabRun"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:background="@drawable/seg_selected"
+                android:gravity="center"
+                android:text="@string/tab_run"
+                android:textColor="@color/on_accent"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tabStats"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:background="@drawable/seg_normal"
+                android:gravity="center"
+                android:text="@string/tab_stats"
+                android:textColor="@color/fg_dim"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/tabHelp"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:background="@drawable/seg_normal"
+                android:gravity="center"
+                android:text="@string/tab_help"
+                android:textColor="@color/fg_dim"
+                android:textSize="16sp" />
+        </LinearLayout>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             面板一：打卡
+             ═══════════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:id="@+id/panelRun"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="18dp"
+                android:text="@string/l_openid" />
+
+            <EditText
+                android:id="@+id/etOpenid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/box"
+                android:hint="@string/h_openid"
+                android:inputType="textNoSuggestions"
+                android:maxLines="1"
+                android:padding="10dp"
+                android:textColor="@color/fg"
+                android:textColorHint="@color/fg_dim"
+                android:textSize="16sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/h_openid_tip"
+                android:textColor="@color/fg_dim"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btnConnect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_ghost"
+                android:text="@string/b_connect"
+                android:textAllCaps="false"
+                android:textColor="@color/accent" />
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="16dp"
+                android:text="@string/l_area" />
+
+            <Spinner
+                android:id="@+id/spArea"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@drawable/box"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Label"
+                        android:text="@string/l_pace" />
+
+                    <EditText
+                        android:id="@+id/etPace"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/box"
+                        android:hint="5:45"
+                        android:inputType="textNoSuggestions"
+                        android:maxLines="1"
+                        android:padding="10dp"
+                        android:textColor="@color/fg"
+                        android:textColorHint="@color/fg_dim"
+                        android:textSize="19sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        style="@style/Label"
+                        android:text="@string/l_dist" />
+
+                    <EditText
+                        android:id="@+id/etDist"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/box"
+                        android:hint="2.0"
+                        android:inputType="numberDecimal"
+                        android:maxLines="1"
+                        android:padding="10dp"
+                        android:textColor="@color/fg"
+                        android:textColorHint="@color/fg_dim"
+                        android:textSize="19sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/box"
+                android:letterSpacing="0.02"
+                android:lineSpacingExtra="4dp"
+                android:padding="12dp"
+                android:text="@string/realtime_note"
+                android:textColor="@color/fg_dim"
+                android:textSize="13sp" />
+
+            <!-- 电池优化状态：深度 Doze 会连 wake lock 一起忽略，只有进白名单才彻底 -->
+            <TextView
+                android:id="@+id/tvBattery"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/box"
+                android:lineSpacingExtra="4dp"
+                android:padding="12dp"
+                android:text="@string/batt_unknown"
+                android:textColor="@color/fg_dim"
+                android:textSize="13sp" />
+
+            <!-- 主按钮：开始 ↔ 结束，同一个 -->
+            <Button
+                android:id="@+id/btnRun"
+                android:layout_width="match_parent"
+                android:layout_height="62dp"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/btn_solid"
+                android:text="@string/b_run"
+                android:textAllCaps="false"
+                android:textColor="@color/on_accent"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <!-- ─────────── 仪表盘 ─────────── -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/box"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/dash_progress"
+                        android:textColor="@color/fg_dim"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/tvPercent"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0%"
+                        android:textColor="@color/accent"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/bar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="12dp"
+                    android:layout_marginTop="8dp"
+                    android:max="100"
+                    android:progress="0" />
+
+                <TextView
+                    android:id="@+id/tvDistance"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/dash_idle_distance"
+                    android:textColor="@color/fg"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvTime"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/dash_idle_time"
+                    android:textColor="@color/fg"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tvPaceInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/dash_idle_pace"
+                    android:textColor="@color/fg_dim"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvBatches"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/dash_idle_batch"
+                    android:textColor="@color/fg_dim"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tvServer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/dash_idle_server"
+                    android:textColor="@color/ok"
+                    android:textSize="15sp" />
+            </LinearLayout>
+
+            <!-- ─────────── 日志 ─────────── -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/l_log"
+                    android:textColor="@color/fg_dim"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnClear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:background="@drawable/btn_ghost"
+                    android:minWidth="72dp"
+                    android:text="@string/b_clear"
+                    android:textAllCaps="false"
+                    android:textColor="@color/fg_dim"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btnShare"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="8dp"
+                    android:background="@drawable/btn_ghost"
+                    android:minWidth="72dp"
+                    android:text="@string/b_share"
+                    android:textAllCaps="false"
+                    android:textColor="@color/fg_dim"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/logScroll"
+                android:layout_width="match_parent"
+                android:layout_height="360dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/box"
+                android:fillViewport="true"
+                android:padding="10dp"
+                android:scrollbarStyle="insideOverlay"
+                android:scrollbars="vertical">
+
+                <TextView
+                    android:id="@+id/tvLog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/log"
+                    android:textIsSelectable="true"
+                    android:textSize="13sp" />
+            </ScrollView>
+        </LinearLayout>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             面板二：统计
+             ═══════════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:id="@+id/panelStats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnRefreshStats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:background="@drawable/btn_ghost"
+                android:text="@string/b_refresh_stats"
+                android:textAllCaps="false"
+                android:textColor="@color/accent" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/box"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:id="@+id/tvStatsSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:lineSpacingExtra="6dp"
+                    android:text="@string/stats_hint"
+                    android:textColor="@color/fg"
+                    android:textSize="17sp" />
+            </LinearLayout>
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="16dp"
+                android:text="@string/l_stats_place" />
+
+            <TextView
+                android:id="@+id/tvStatsByPlace"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/box"
+                android:lineSpacingExtra="5dp"
+                android:padding="12dp"
+                android:text="@string/stats_dash"
+                android:textColor="@color/log"
+                android:textSize="15sp" />
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="16dp"
+                android:text="@string/l_stats_list" />
+
+            <TextView
+                android:id="@+id/tvStatsList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/box"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="4dp"
+                android:padding="12dp"
+                android:text="@string/stats_dash"
+                android:textColor="@color/log"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             面板三：取码（openid 说明 + 提取脚本）
+             ═══════════════════════════════════════════════════════════ -->
+        <LinearLayout
+            android:id="@+id/panelHelp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="18dp"
+                android:text="@string/help_title" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/box"
+                android:lineSpacingExtra="5dp"
+                android:padding="14dp"
+                android:text="@string/help_body"
+                android:textColor="@color/fg"
+                android:textSize="15sp" />
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="16dp"
+                android:text="@string/help_steps" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/box"
+                android:layout_marginTop="6dp"
+                android:lineSpacingExtra="5dp"
+                android:padding="14dp"
+                android:text="@string/help_note"
+                android:textColor="@color/fg_dim"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btnCopyScript"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_solid"
+                    android:text="@string/b_copy_script"
+                    android:textAllCaps="false"
+                    android:textColor="@color/on_accent"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnShareScript"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/btn_ghost"
+                    android:text="@string/b_share_script"
+                    android:textAllCaps="false"
+                    android:textColor="@color/accent" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnToggleScript"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/btn_ghost"
+                android:text="@string/b_view_script"
+                android:textAllCaps="false"
+                android:textColor="@color/fg_dim"
+                android:textSize="15sp" />
+
+            <ScrollView
+                android:id="@+id/scriptScroll"
+                android:layout_width="match_parent"
+                android:layout_height="460dp"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/box"
+                android:fillViewport="true"
+                android:padding="10dp"
+                android:scrollbars="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvScript"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/log"
+                    android:textIsSelectable="true"
+                    android:textSize="12sp" />
+            </ScrollView>
+
+            <TextView
+                style="@style/Label"
+                android:layout_marginTop="16dp"
+                android:text="@string/l_script" />
+
+            <TextView
+                android:id="@+id/tvScriptPath"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/box"
+                android:lineSpacingExtra="4dp"
+                android:padding="12dp"
+                android:text=""
+                android:textColor="@color/log"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- ═══════════ 署名 ═══════════ -->
+        <TextView
+            android:id="@+id/tvCredit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="6dp"
+            android:gravity="center"
+            android:letterSpacing="0.05"
+            android:lineSpacingExtra="4dp"
+            android:text="@string/credit"
+            android:textColor="@color/fg_dim"
+            android:textSize="14sp" />
+
+    </LinearLayout>
+</ScrollView>

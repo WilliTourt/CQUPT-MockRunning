@@ -1,0 +1,57 @@
+# ─────────── 构建产物 ───────────
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ─────────── IDE ───────────
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+
+# ─────────── Android 本地配置 ───────────
+# 里面是本机的 SDK 路径，不该进仓库
+local.properties
+*.keystore
+*.jks
+
+# ─────────── Python ───────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ─────────── 运行输出（每次跑都不一样）───────────
+run/
+
+# ─────────── 隐私：绝对不能进仓库 ───────────
+# 这两个文件里有真实的 openid / 统一认证码 / 学号
+refs/openid_extract.txt
+refs/openid_hunt.txt
+refs/*.flow
+refs/wechat_cache/
+
+# ─────────── 可按需重现的过程产物 ───────────
+# 小程序解包结果，用 refs/wxapkg_unpack.py 随时能重现
+refs/unpacked/
+# 采集器二进制的 strings dump（1.4 MB 噪声，需要时自己 dump 一份）
+refs/collector_strings*.txt
+# 旧版手绘图标源图（已被插画版取代）
+refs/icon/art/source_1024_old.png
+# 各密度图标在 android-app/ 里已有一份，这里是重复的
+refs/icon/mipmap-*/
+
+# ─────────── 系统 ───────────
+.DS_Store
+Thumbs.db
+desktop.ini
