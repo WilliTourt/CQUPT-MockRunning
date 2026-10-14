@@ -16,6 +16,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -88,6 +90,20 @@ class SettingsActivity : AppCompatActivity() {
         tvStatsList = findViewById(R.id.tvStatsList)
 
         etOpenid.setText(prefs.getString("openid", ""))
+        // 边填边存：用户可能填完 openid 就直接返回主页，并不会点【连接并拉取场地】。
+        // 不存的话主页读到的还是空的，场地当然不刷新 —— 这正是要修的那个 bug。
+        // 主页 onResume 会用它自动拉一次场地，所以"填了就生效"。
+        etOpenid.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                val v = s?.toString().orEmpty().trim()
+                if (v != prefs.getString("openid", "")) {
+                    prefs.edit().putString("openid", v).apply()
+                }
+            }
+
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
         btnConnect.setOnClickListener { doConnect() }
 
         // openid 帮助折叠区
@@ -125,8 +141,10 @@ class SettingsActivity : AppCompatActivity() {
     /**
      * 连接并拉取场地。
      *
-     * 场地的选择在主页做，所以这里连上之后只需把结果留在引擎里、
-     * 让用户回主页去选；这里给出明确的成功 / 失败反馈。
+     * 场地的选择在主页做，所以这里连上之后把结果发布到 [AreaStore]，
+     * 主页 onResume 一比对 revision 就会自动重绑下拉框 —— 不需要用户先去点一次
+     * 【开始打卡】才看到场地（这就是「填完 openid 主页不刷新」的修复点）。
+     * 这里同时给出明确的成功 / 失败反馈。
      */
     private fun doConnect() {
         if (busy) return
@@ -135,6 +153,10 @@ class SettingsActivity : AppCompatActivity() {
             toast(getString(R.string.need_openid))
             return
         }
+        // 换了 openid：旧场地属于上一个账号，先作废，免得主页显示别人的场地
+        if (AreaStore.publishedOpenid.isNotEmpty() && AreaStore.publishedOpenid != oid) {
+            AreaStore.invalidate()
+        }
         prefs.edit().putString("openid", oid).apply()
         busy = true
         btnConnect.isEnabled = false
@@ -142,7 +164,9 @@ class SettingsActivity : AppCompatActivity() {
         btnConnect.text = getString(R.string.conn_connecting)
 
         Thread {
+            // 结果分三类：连不上 / openid 有问题 / 拿到场地（可能一个都没有）
             var netFail = false
+            var badOpenid = false
             var got = 0
             try {
                 if (engine.connect(oid)) {
@@ -150,11 +174,16 @@ class SettingsActivity : AppCompatActivity() {
                     val list = engine.fetchAreas()
                     netFail = engine.netFail
                     got = list.size
+                    if (netFail) AreaStore.markNetFailed(oid) else AreaStore.publish(oid, list)
                 } else {
                     netFail = engine.netFail
+                    badOpenid = !netFail
+                    if (netFail) AreaStore.markNetFailed(oid) else AreaStore.markBadOpenid(oid)
                 }
             } catch (t: Throwable) {
                 // 异常同样按失败处理，不让界面卡在"连接中"
+                AreaStore.markNetFailed(oid)
+                netFail = true
             } finally {
                 ui.post {
                     busy = false
@@ -162,6 +191,7 @@ class SettingsActivity : AppCompatActivity() {
                     btnConnect.text = old
                     when {
                         netFail -> showConnectFailed()
+                        badOpenid -> toast(getString(R.string.conn_bad_openid))
                         got == 0 -> toast(getString(R.string.conn_no_area))
                         else -> toast(getString(R.string.conn_ok))
                     }
