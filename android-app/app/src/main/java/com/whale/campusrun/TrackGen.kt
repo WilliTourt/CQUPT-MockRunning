@@ -1,5 +1,5 @@
 /*
- * 轨迹生成：配速标定 / 电子围栏内缩 / 禁跑区避让 / AR(1) GPS 噪声
+ * 轨迹生成：配速标定 / 电子围栏内缩 / 禁跑区避让 / AR(1) GPS 噪声 / 温和起伏
  * 作者：蓝色大肥鱼 🐟
  */
 package com.whale.campusrun
@@ -69,9 +69,6 @@ object Geo {
         }
         return inside
     }
-
-    private fun mPerDegLat() = 110540.0
-    private fun mPerDegLon(lat: Double) = 111320.0 * cos(Math.toRadians(lat))
 }
 
 /** 轨迹点：时间用相对起始的秒数表示，由调用方加上真实起始时刻。 */
@@ -84,6 +81,19 @@ data class TrackPoint(
     val accuracy: Double
 )
 
+/** 一次轨迹生成的结果，连同实测配速一起返回，方便界面说明"有没有被钳制"。 */
+data class TrackResult(
+    val points: List<TrackPoint>,
+    /** 实测平均配速，秒/公里。 */
+    val paceSecKm: Double,
+    /** 目标配速加减容差得到的允许窗口。 */
+    val window: ClosedFloatingPointRange<Double>,
+    /** 采样点数是否为了压进窗口而被调整过。 */
+    val adjusted: Boolean
+) {
+    val inWindow: Boolean get() = paceSecKm in window
+}
+
 /**
  * 轨迹生成器。
  *
@@ -95,16 +105,27 @@ data class TrackPoint(
  *  2. 采样点数由「配速 × 距离」锁死，二分反解地面速度，
  *     使**实测配速等于目标配速**（否则噪声会把距离撑长十几个百分点）
  *  3. AR(1) 相关噪声，模拟真实 GPS 的低频漂移
+ *  4. 逐秒速度带**温和起伏**（起步慢、中途数段快慢、越跑越累、尾声略冲，
+ *     并叠入少量短暂停顿），**平均值仍锁死在目标配速上**
+ *  5. 生成后校验平均配速是否落在「目标 ± 容差」内，越界就按比例微调采样点数重算，
+ *     保证无论如何都不会因为形态或噪声而飘出达标区间
  */
 object TrackGen {
 
+    /** 平均配速相对目标值允许偏离多少秒/公里。 */
+    const val DEFAULT_PACE_TOLERANCE_SEC = 20.0
+
+    /** 最多重算几次来把平均配速压进窗口。 */
+    private const val MAX_PACE_FIX_ATTEMPTS = 4
+
     /**
-     * @param poly        电子围栏多边形（dzwl，gcj02），元素 [lat, lon]
-     * @param excludes    禁跑区多边形（jpq），轨迹必须完全避开
-     * @param paceSecKm   目标配速，秒/公里
-     * @param targetM     目标距离，米
-     * @param noise       逐秒抖动强度，0.6 ≈ 开阔地手机滤波后的表现
-     * @param seed        随机种子
+     * @param poly             电子围栏多边形（dzwl，gcj02），元素 [lat, lon]
+     * @param excludes         禁跑区多边形（jpq），轨迹必须完全避开
+     * @param paceSecKm        目标配速，秒/公里
+     * @param targetM          目标距离，米
+     * @param noise            逐秒抖动强度，0.6 ≈ 开阔地手机滤波后的表现
+     * @param seed             随机种子
+     * @param paceToleranceSec 平均配速容差（秒/公里）
      */
     fun generate(
         poly: List<DoubleArray>,
@@ -112,22 +133,80 @@ object TrackGen {
         paceSecKm: Double,
         targetM: Double,
         noise: Double = 0.6,
-        seed: Int = 0
-    ): List<TrackPoint> {
+        seed: Int = 0,
+        paceToleranceSec: Double = DEFAULT_PACE_TOLERANCE_SEC
+    ): TrackResult {
         require(poly.size >= 3) { "区域多边形至少需要 3 个顶点" }
+        require(paceSecKm > 0) { "配速必须为正数" }
+
         val fence = dedupe(poly)
+        val window = paceWindow(paceSecKm, paceToleranceSec)
 
-        // 采样点数由配速和距离唯一确定
-        val nomSpeed = 1000.0 / paceSecKm
-        val n = maxOf(2, Math.round(targetM / nomSpeed).toInt())
+        // 采样点数由「配速 × 距离」唯一确定（时长是硬约束）
+        var n = maxOf(2, Math.round(targetM / (1000.0 / paceSecKm)).toInt())
+        var adjusted = false
+        var pts = emptyList<TrackPoint>()
+        var pace = 0.0
 
-        // 逐级向内缩放，挑选"围栏内最多 + 禁跑区最少"的一版
+        for (attempt in 0 until MAX_PACE_FIX_ATTEMPTS) {
+            val weights = stepWeights(n, seed)
+            pts = generateForCount(fence, excludes, n, weights, targetM, noise, seed)
+            pace = paceOf(pts)
+            if (pace in window) break
+
+            // 飘出窗口：按配速比例反推该用多少秒。配速偏慢（数值偏大）
+            // 说明秒数多了，要减点；反之加点。
+            val ratio = pace / paceSecKm
+            val next = Math.round(n / ratio).toInt().coerceIn(2, n * 4 + 8)
+            if (next == n) break
+            n = next
+            adjusted = true
+        }
+
+        return TrackResult(pts, pace, window, adjusted)
+    }
+
+    /** 平均配速允许窗口，单位秒/公里。 */
+    fun paceWindow(paceSecKm: Double, tol: Double): ClosedFloatingPointRange<Double> {
+        val t = abs(tol)
+        return (paceSecKm - t).coerceAtLeast(60.0)..(paceSecKm + t)
+    }
+
+    /** 轨迹的实测平均配速（秒/公里）。时长按采样点跨度算，与 collectTime 一致。 */
+    fun paceOf(pts: List<TrackPoint>): Double {
+        if (pts.size < 2) return 0.0
+        val d = distanceOf(pts)
+        return if (d > 0) (pts.size - 1) / (d / 1000.0) else 0.0
+    }
+
+    /** 轨迹总距离（米）。 */
+    fun distanceOf(pts: List<TrackPoint>): Double {
+        var s = 0.0
+        for (i in 0 until pts.size - 1) {
+            s += Geo.hav(pts[i].lat, pts[i].lon, pts[i + 1].lat, pts[i + 1].lon)
+        }
+        return s
+    }
+
+    /**
+     * 固定点数 n 的完整生成流程：逐档挑内缩系数 → 铺点 → 返回得分最高的一版。
+     * 得分 = （围栏内点数 − 禁跑区点数）/ 总点数。
+     */
+    private fun generateForCount(
+        fence: List<DoubleArray>,
+        excludes: List<List<DoubleArray>>,
+        n: Int,
+        weights: DoubleArray,
+        targetM: Double,
+        noise: Double,
+        seed: Int
+    ): List<TrackPoint> {
         var best: List<TrackPoint> = emptyList()
         var bestScore = -1.0
 
         for (f in doubleArrayOf(0.90, 0.85, 0.80, 0.74, 0.66, 0.58, 0.50)) {
             val ring = organic(inset(fence, f), 3.0, seed)
-            val pts = build(ring, n, nomSpeed, targetM, noise, seed)
+            val pts = build(ring, n, weights, targetM, noise, seed, fence)
             val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fence) }
             val banned = pts.count { p -> excludes.any { Geo.pointInPoly(p.lat, p.lon, it) } }
             val score = (inside - banned).toDouble() / pts.size
@@ -135,7 +214,7 @@ object TrackGen {
                 bestScore = score
                 best = pts
             }
-            if (banned == 0 && inside.toDouble() / pts.size >= 0.995) break
+            if (banned == 0 && inside == pts.size) break
         }
         return best
     }
@@ -162,6 +241,99 @@ object TrackGen {
                 " | 禁跑区 $banned 点"
     }
 
+    // ------------------------------------------------------------ 配速形态
+
+    /**
+     * 逐秒的"速度权重"。均值恒为 1，所以整体配速仍然锚在目标上；
+     * 它只负责把匀速拆成有快有慢。
+     *
+     * 三层时间尺度叠加：
+     *   · 疲劳（整场，单向变慢）
+     *   · 地形 / 路况（一两分钟量级）
+     *   · 步频波动（十几秒量级）—— 纯模型噪声，与传感器无关
+     */
+    private fun stepWeights(n: Int, seed: Int): DoubleArray {
+        if (n < 24) return DoubleArray(n) { 1.0 }
+
+        val slow = slownessProfile(n, seed)
+        val terrain = randomWalkSegments(n, 260, 0.06, seed, 1)
+        val jitter = randomWalkSegments(n, 11, 0.045, seed, 2)
+
+        val w = DoubleArray(n)
+        for (i in 0 until n) w[i] = 1.0 / (slow[i] * terrain[i] * jitter[i])
+
+        // 归一化：均值 = 1。标定只负责把总距离校准到 targetM，
+        // 形态不参与配速计算，因此两者不会互相干扰。
+        val mean = w.average()
+        if (mean > 0) for (i in 0 until n) w[i] /= mean
+        return w
+    }
+
+    /**
+     * "慢"的倍数：1.0 = 目标配速，越大越慢，22 ≈ 停下来系鞋带。
+     *
+     * 这是"温和起伏"：起步慢、中途数段快慢、越跑越累、尾声略冲，
+     * 并叠入少量短暂停顿。全程不停的那种匀速跑是不存在的。
+     */
+    private fun slownessProfile(n: Int, seed: Int): DoubleArray {
+        val out = DoubleArray(n) { 1.0 }
+        val rnd = Random(seed * 7919 + 13)
+
+        // 配速段：每 40~70 秒换一档，模拟"这一段跑快些、那一段拖着"
+        val segLen = 40 + rnd.nextInt(31)
+        var i = 0
+        while (i < n) {
+            val end = min(n, i + segLen)
+            val f = 0.85 + rnd.nextDouble() * 0.60          // 0.85 ~ 1.45
+            for (k in i until end) out[k] = f
+            i = end
+        }
+
+        for (k in 0 until n) {
+            // 起跑要加速到位
+            if (k < 25) out[k] *= 1.08
+            // 尾声通常会冲一下
+            if (k >= n - 25) out[k] *= 0.94
+            // 疲劳：越到后面越慢
+            out[k] *= 1.0 + 0.10 * k / n
+        }
+
+        // 停顿：约 7% 的时间点落在里面，2 公里大概是 2~3 次
+        val pauses = (n * 0.07 / 6.0).toInt().coerceIn(1, 5)
+        repeat(pauses) {
+            val len = 4 + rnd.nextInt(6)                     // 4 ~ 9 秒
+            val span = maxOf(1, n - len - 1)
+            val at = (span * (0.12 + rnd.nextDouble() * 0.76)).toInt()
+            for (k in at until min(n, at + len)) out[k] = 22.0
+        }
+
+        return out
+    }
+
+    /**
+     * 分段常数的乘性扰动：每段随机长度、随机幅度。
+     *
+     * 用它而不是逐点白噪声，是因为真实的速度变化是**成簇**的
+     * （一段路跑快、一段路跑慢），逐点独立抖动看起来反而像仪器噪声。
+     */
+    private fun randomWalkSegments(
+        n: Int, segLen: Int, jitter: Double, seed: Int, salt: Int
+    ): DoubleArray {
+        val rnd = Random(seed * 131 + salt * 977 + 17)
+        val out = DoubleArray(n) { 1.0 }
+        var i = 0
+        while (i < n) {
+            val g = maxOf(1, segLen / 2 + rnd.nextInt(segLen + 1))
+            val v = 1.0 + rnd.nextDouble(-jitter, jitter)
+            val end = min(n, i + g)
+            for (k in i until end) out[k] = v
+            i = end
+        }
+        return out
+    }
+
+    // ------------------------------------------------------------ 环线
+
     /** 向内缩放：每个顶点朝质心方向按比例靠拢。 */
     private fun inset(poly: List<DoubleArray>, f: Double): List<DoubleArray> {
         val cLat = poly.map { it[0] }.average()
@@ -169,6 +341,44 @@ object TrackGen {
         return poly.map {
             doubleArrayOf(cLat + (it[0] - cLat) * f, cLon + (it[1] - cLon) * f)
         }
+    }
+
+    /**
+     * 把落到围栏外的点拉回围栏内 —— 沿"该点 → 质心"的连线二分逼近边界。
+     *
+     * 为什么需要它：内缩系数是离散的档位（0.90 / 0.85 / …），而 GPS 噪声
+     * 会把点横向推出十几米。某些 seed / 配速组合下，档位挑得再准也总有几个点
+     * 被噪声顶到围栏外（实测风华运动场 330s/km + seed=555 会有 2 个点出界）。
+     * 出界的点服务端不计里程，于是"实测配速"就会被拉偏，达标判定跟着遭殃。
+     *
+     * 这里只动越界的那几个点，而且位移极小（刚好回到边界内侧），
+     * 对整体形态和配速标定的影响可以忽略。
+     */
+    private fun clampToFence(
+        lat: Double,
+        lon: Double,
+        fence: List<DoubleArray>
+    ): DoubleArray {
+        if (fence.size < 3) return doubleArrayOf(lat, lon)
+        if (Geo.pointInPoly(lat, lon, fence)) return doubleArrayOf(lat, lon)
+
+        val cLat = fence.map { it[0] }.average()
+        val cLon = fence.map { it[1] }.average()
+        // 质心本身都不在围栏里（凹多边形）就没法这么拉，原样返回
+        if (!Geo.pointInPoly(cLat, cLon, fence)) return doubleArrayOf(lat, lon)
+
+        // 二分：t=0 在质心（内），t=1 是原点（外），找最大的"仍在内部"的 t
+        var lo = 0.0
+        var hi = 1.0
+        repeat(24) {
+            val mid = (lo + hi) / 2.0
+            val mlat = cLat + (lat - cLat) * mid
+            val mlon = cLon + (lon - cLon) * mid
+            if (Geo.pointInPoly(mlat, mlon, fence)) lo = mid else hi = mid
+        }
+        // 往回让一丁点，避免正好压在边界线上被判出界
+        val t = (lo * 0.995).coerceIn(0.0, 1.0)
+        return doubleArrayOf(cLat + (lat - cLat) * t, cLon + (lon - cLon) * t)
     }
 
     /**
@@ -272,75 +482,131 @@ object TrackGen {
         return Pair(p, Geo.bearing(a[0], a[1], b[0], b[1]))
     }
 
+    // ------------------------------------------------------------ 采样
+
+    /**
+     * 固定点数 n，按权重把每一秒该走的路程铺开，再叠加相关噪声。
+     *
+     * 同一个 seed 每次都重现同一噪声实现，因此 measure 是关于 step 的
+     * 确定性单调递增函数，可以直接二分。
+     */
     private fun build(
         ring: List<DoubleArray>,
         n: Int,
-        nomSpeed: Double,
+        weights: DoubleArray,
         targetM: Double,
         noise: Double,
-        seed: Int
+        seed: Int,
+        fence: List<DoubleArray> = emptyList()
     ): List<TrackPoint> {
         val (dense, cum) = densify(ring, 1.0)
 
         fun emit(step: Double): List<TrackPoint> {
             val rnd = Random(seed)
+            val rndAcc = Random(seed * 31 + 7)
             var perr = 0.0
             var aerr = 0.0
-            var smSpeed = nomSpeed
-            val out = ArrayList<TrackPoint>(n)
+            var travelled = 0.0
+
+            // 第一遍：先只按权重铺出真实坐标
+            val lat = DoubleArray(n)
+            val lon = DoubleArray(n)
+            val pew = DoubleArray(n)
             for (i in 0 until n) {
-                val (p, hdg) = pointAt(dense, cum, i * step)
+                val (p, hdg) = pointAt(dense, cum, travelled)
                 perr = 0.9 * perr + rnd.nextDouble(-1.0, 1.0) * noise * 0.55
                 aerr = 0.9 * aerr + rnd.nextDouble(-1.0, 1.0) * noise * 0.35
+                val o1 = Geo.offset(p[0], p[1], perr, (hdg + 90.0) % 360.0)
+                val o2 = Geo.offset(o1[0], o1[1], aerr, hdg)
+                val c = clampToFence(o2[0], o2[1], fence)
+                lat[i] = c[0]
+                lon[i] = c[1]
+                pew[i] = perr
+                travelled += step * weights[i]
+            }
 
-                var o = Geo.offset(p[0], p[1], perr, (hdg + 90.0) % 360.0)
-                o = Geo.offset(o[0], o[1], aerr, hdg)
+            // 第二遍：speed / bearing 从**最终坐标**反推。
+            // 这样上报的字段和轨迹严格自洽，不会出现"速度写着 3.0 但两点间距 1.2m"。
+            val out = ArrayList<TrackPoint>(n)
+            for (i in 0 until n) {
+                val j = if (i < n - 1) i + 1 else i - 1
+                val seg = Geo.hav(lat[i], lon[i], lat[j], lon[j])
+                val brg = if (i < n - 1) Geo.bearing(lat[i], lon[i], lat[j], lon[j])
+                else if (n > 1) Geo.bearing(lat[j], lon[j], lat[i], lon[i]) else 0.0
 
-                smSpeed = 0.75 * smSpeed + 0.25 * (nomSpeed * (1.0 + rnd.nextDouble(-0.03, 0.03)))
+                // 精度：多数时候 4~8m，背阴 / 贴楼时偶尔跳到十几米
+                val acc = 4.5 + abs(pew[i]) * 0.45 + rndAcc.nextDouble(-1.0, 2.2)
 
                 out.add(
                     TrackPoint(
-                        lat = o[0],
-                        lon = o[1],
+                        lat = lat[i],
+                        lon = lon[i],
                         secOffset = i,
-                        speed = Math.round(smSpeed * 100.0) / 100.0,
-                        bearing = Math.round(((hdg + rnd.nextDouble(-1.6, 1.6) + 360.0) % 360.0) * 10.0) / 10.0,
-                        accuracy = Math.round(maxOf(4.0, 5.0 + abs(perr) * 0.5 + rnd.nextDouble(-1.0, 2.0)) * 10.0) / 10.0
+                        speed = Math.round(seg * 100.0) / 100.0,
+                        bearing = Math.round(brg * 10.0) / 10.0,
+                        accuracy = Math.round(acc.coerceIn(3.0, 18.0) * 10.0) / 10.0
                     )
                 )
             }
             return out
         }
 
-        fun measure(pts: List<TrackPoint>): Double {
-            var s = 0.0
-            for (i in 0 until pts.size - 1) s += Geo.hav(pts[i].lat, pts[i].lon, pts[i + 1].lat, pts[i + 1].lon)
-            return s
-        }
+        fun measure(pts: List<TrackPoint>): Double = distanceOf(pts)
 
         // 噪声按秒注入、与步长无关，会把实测距离撑长。二分反解地面步长，
         // 让输出轨迹的实测距离 == targetM，配速才准。
         if (measure(emit(0.0)) >= targetM) return emit(0.0)
 
         var lo = 0.0
-        var hi = nomSpeed * 2.0
+        var hi = 5.0                       // 5 m/s 起步，2000m 的量级足够越过目标
         while (measure(emit(hi)) < targetM && hi < 1e5) hi *= 1.5
-        repeat(48) {
+        repeat(44) {
             val mid = (lo + hi) / 2.0
             if (measure(emit(mid)) < targetM) lo = mid else hi = mid
         }
         return emit((lo + hi) / 2.0)
     }
 
-    /** 结果统计，用于界面上给用户一个交代。 */
+    // ------------------------------------------------------------ 统计
+
+    /**
+     * 结果统计。配速区间按 15 秒滚动窗口算 —— 逐秒的瞬时配速在停顿处会趋于无穷，
+     * 直接取极值没有意义，滚动窗口才对应"跑者感受到的配速"。
+     */
     fun summarize(pts: List<TrackPoint>): String {
-        var d = 0.0
-        for (i in 0 until pts.size - 1) d += Geo.hav(pts[i].lat, pts[i].lon, pts[i + 1].lat, pts[i + 1].lon)
+        val d = distanceOf(pts)
         val dur = pts.size - 1
         val pace = if (d > 0) dur / (d / 1000.0) else 0.0
-        val m = (pace / 60).toInt()
-        val s = (pace % 60).toInt()
+
+        val (lo, hi) = windowPaceRange(pts, 15)
+        val spread = if (lo > 0 && hi > 0) " | 分段配速 ${fmtPace(lo)}~${fmtPace(hi)}" else ""
         return "点数 ${pts.size} | 距离 ${"%.1f".format(d)} m | 时长 ${dur / 60}分${dur % 60}秒 | " +
-                "实测配速 $m'${"%02d".format(s)}\"/km"
+                "实测配速 ${fmtPace(pace)}$spread"
+    }
+
+    /** 15 秒滚动窗口的配速 (最快, 最慢)，秒/公里。 */
+    fun windowPaceRange(pts: List<TrackPoint>, win: Int): Pair<Double, Double> {
+        if (pts.size <= win + 1) return Pair(0.0, 0.0)
+        var fastest = Double.MAX_VALUE
+        var slowest = 0.0
+        for (i in 0..pts.size - 1 - win) {
+            var seg = 0.0
+            for (k in i until i + win) {
+                seg += Geo.hav(pts[k].lat, pts[k].lon, pts[k + 1].lat, pts[k + 1].lon)
+            }
+            if (seg <= 0.1) continue
+            val p = win / (seg / 1000.0)
+            if (p < fastest) fastest = p
+            if (p > slowest) slowest = p
+        }
+        if (fastest == Double.MAX_VALUE) return Pair(0.0, 0.0)
+        return Pair(fastest, slowest)
+    }
+
+    fun fmtPace(secPerKm: Double): String {
+        if (secPerKm <= 0 || secPerKm > 3600) return "--"
+        val m = (secPerKm / 60).toInt()
+        val s = (secPerKm % 60).toInt()
+        return "$m'${"%02d".format(s)}\""
     }
 }

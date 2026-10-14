@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  API 27+ 专用的深色主题。
+
+  浅色 / 深色 / API 版本三个维度组合出四份主题定义：
+    values/            浅色，API 24~26
+    values-night/      深色，API 24~26
+    values-v27/        浅色，API 27+
+    values-night-v27/  深色，API 27+   ← 本文件
+
+  多这一份是为了**显式**写死深色下的 windowLightNavigationBar=false，
+  而不是靠限定符回退到 values-night/（那样值恰好也对，但依赖巧合）。
+  改任何一份时记得四份同步。
+-->
+<resources>
+    <style name="Theme.CampusRun" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorPrimaryDark">@color/bg</item>
+        <item name="colorAccent">@color/accent</item>
+        <item name="android:textColorPrimary">@color/fg</item>
+        <item name="android:textColorSecondary">@color/fg_dim</item>
+        <item name="android:statusBarColor">@color/box</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorControlActivated">@color/accent</item>
+    </style>
+</resources>

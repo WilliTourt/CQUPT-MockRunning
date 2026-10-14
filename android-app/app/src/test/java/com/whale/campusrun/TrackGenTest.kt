@@ -76,7 +76,7 @@ class TrackGenTest {
     @Test
     fun `风华运动场 各配速都精确命中`() {
         for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 12345)
+            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 12345).points
             val d = measure(pts)
             val rp = realPace(pts)
             assertEquals("距离 target=${pace}s/km", 2000.0, d, 2000.0 * 0.005)
@@ -87,7 +87,7 @@ class TrackGenTest {
     @Test
     fun `所有点必须落在电子围栏内`() {
         for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 7)
+            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 7).points
             val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
             assertEquals("pace=$pace 有点跑到围栏外", pts.size, inside)
         }
@@ -96,7 +96,7 @@ class TrackGenTest {
     @Test
     fun `不能有任何点落在禁跑区`() {
         for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 99)
+            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 99).points
             val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
             assertEquals("pace=$pace 有 $banned 个点落在禁跑区，这部分不计里程", 0, banned)
         }
@@ -106,7 +106,7 @@ class TrackGenTest {
     fun `太极运动场与宁静苑同样达标`() {
         for ((name, fence) in listOf("太极运动场" to taiJiFence, "宁静苑" to ningJingFence)) {
             for (pace in listOf(330.0, 345.0)) {
-                val pts = TrackGen.generate(fence, emptyList(), pace, 2000.0, seed = 2026)
+                val pts = TrackGen.generate(fence, emptyList(), pace, 2000.0, seed = 2026).points
                 val rp = realPace(pts)
                 assertTrue("$name pace=$pace", Math.abs(rp - pace) <= 1.0)
                 val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fence) }
@@ -117,7 +117,7 @@ class TrackGenTest {
 
     @Test
     fun `轨迹形态要像人跑的，不是机器画的`() {
-        val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555)
+        val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555).points
 
         // 航向不能只有几个固定值（矩形会只有 4 个）
         val headings = pts.map { Math.round(it.bearing) }.toSet()
@@ -140,12 +140,55 @@ class TrackGenTest {
 
     @Test
     fun `时间轴必须逐秒递增`() {
-        val pts = TrackGen.generate(ningJingFence, emptyList(), 345.0, 2000.0, seed = 1)
+        val pts = TrackGen.generate(ningJingFence, emptyList(), 345.0, 2000.0, seed = 1).points
         for (i in pts.indices) {
             assertEquals(i, pts[i].secOffset)
         }
         // 2000m @ 5'45"/km ≈ 690 秒
         assertTrue("时长 ${pts.size - 1}s 不合理", Math.abs((pts.size - 1) - 690) <= 3)
+    }
+
+    // ------------------------------------------------------------ 配速形态
+
+    /** 起伏再大，围栏和禁跑区这两条硬约束也不能破。 */
+    @Test
+    fun `各种配速与种子下都不能越界`() {
+        for (pace in paces) {
+            for (seed in listOf(1, 99, 555, 2026)) {
+                val pts = TrackGen.generate(
+                    fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = seed
+                ).points
+                val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
+                val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
+                assertEquals("pace=$pace seed=$seed 有点跑到围栏外", pts.size, inside)
+                assertEquals("pace=$pace seed=$seed 有 $banned 个点落在禁跑区", 0, banned)
+            }
+        }
+    }
+
+    /** 温和起伏：逐秒步长必须有明显快慢差异，且出现短暂停顿。 */
+    @Test
+    fun `温和起伏既要有快慢差异也要有停顿`() {
+        val pts = TrackGen.generate(
+            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 777
+        ).points
+        val steps = (0 until pts.size - 1).map {
+            Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+        }
+        val span = steps.max() - steps.min()
+        assertTrue("步长跨度只有 $span，起伏太平", span > 1.0)
+        assertTrue("没有任何停顿点，不像真人", steps.count { it < 0.4 } > 0)
+    }
+
+    /** 配速窗口的计算。 */
+    @Test
+    fun `配速窗口计算正确`() {
+        val w = TrackGen.paceWindow(345.0, 20.0)
+        assertEquals(325.0, w.start, 1e-9)
+        assertEquals(365.0, w.endInclusive, 1e-9)
+        // 窗口下限不能被压到 60 秒以下（不合理配速）
+        val w2 = TrackGen.paceWindow(70.0, 30.0)
+        assertEquals(60.0, w2.start, 1e-9)
     }
 
     @Test

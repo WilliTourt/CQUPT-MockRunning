@@ -1,5 +1,6 @@
-﻿/*
- * 鏍″洯璺?鈥斺€?閲嶉偖鏅烘収浣撹偛鎵撳崱宸ュ叿锛堝崟鏈虹増锛? * 浣滆€咃細钃濊壊澶ц偉楸?馃悷
+/*
+ * 校园跑——重邮智慧体育打卡工具（单机版）
+ * 作者：蓝色大肥鱼🐟
  */
 plugins {
     id("com.android.application")
@@ -14,8 +15,10 @@ android {
         applicationId = "com.whale.campusrun"
         minSdk = 24
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.8"
+        // 版本号由版本分支推导，公式与清单见 AGENT.md §5.1 / §5.2
+        // 当前分支 dev-gufandf 的版本分支是 V1.9.0 → MAJOR*10000 + MINOR*100 + PATCH
+        versionCode = 10900
+        versionName = "1.9.0"
     }
 
     buildTypes {
@@ -25,7 +28,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // 鑷敤锛岀洿鎺ョ敤 debug 绛惧悕锛屽厤寰楅厤 keystore
+            // 自用，直接用 debug 签名，免得配 keystore
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -40,7 +43,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig = true      // 璁?MainActivity 鑳借鍒?BuildConfig.VERSION_NAME
+        buildConfig = true      // 让 MainActivity 能读到 BuildConfig.VERSION_NAME
     }
 }
 
@@ -49,7 +52,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("com.google.android.material:material:1.12.0")
 
-    // TrackGen 鏄函 JVM 閫昏緫锛岀洿鎺ョ敤鍗曞厓娴嬭瘯楠岃瘉閰嶉€熸爣瀹氫笌鍥存爮鍒ゅ畾
+    // TrackGen 是纯 JVM 逻辑，直接用单元测试验证配速标定与围栏判定
     testImplementation("junit:junit:4.13.2")
 }
 
