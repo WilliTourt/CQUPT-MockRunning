@@ -76,7 +76,7 @@ class TrackGenTest {
     @Test
     fun `风华运动场 各配速都精确命中`() {
         for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 12345)
+            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 12345).points
             val d = measure(pts)
             val rp = realPace(pts)
             assertEquals("距离 target=${pace}s/km", 2000.0, d, 2000.0 * 0.005)
@@ -87,7 +87,7 @@ class TrackGenTest {
     @Test
     fun `所有点必须落在电子围栏内`() {
         for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 7)
+            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 7).points
             val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
             assertEquals("pace=$pace 有点跑到围栏外", pts.size, inside)
         }
@@ -96,7 +96,7 @@ class TrackGenTest {
     @Test
     fun `不能有任何点落在禁跑区`() {
         for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 99)
+            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 99).points
             val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
             assertEquals("pace=$pace 有 $banned 个点落在禁跑区，这部分不计里程", 0, banned)
         }
@@ -106,7 +106,7 @@ class TrackGenTest {
     fun `太极运动场与宁静苑同样达标`() {
         for ((name, fence) in listOf("太极运动场" to taiJiFence, "宁静苑" to ningJingFence)) {
             for (pace in listOf(330.0, 345.0)) {
-                val pts = TrackGen.generate(fence, emptyList(), pace, 2000.0, seed = 2026)
+                val pts = TrackGen.generate(fence, emptyList(), pace, 2000.0, seed = 2026).points
                 val rp = realPace(pts)
                 assertTrue("$name pace=$pace", Math.abs(rp - pace) <= 1.0)
                 val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fence) }
@@ -117,7 +117,7 @@ class TrackGenTest {
 
     @Test
     fun `轨迹形态要像人跑的，不是机器画的`() {
-        val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555)
+        val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555).points
 
         // 航向不能只有几个固定值（矩形会只有 4 个）
         val headings = pts.map { Math.round(it.bearing) }.toSet()
@@ -140,7 +140,7 @@ class TrackGenTest {
 
     @Test
     fun `时间轴必须逐秒递增`() {
-        val pts = TrackGen.generate(ningJingFence, emptyList(), 345.0, 2000.0, seed = 1)
+        val pts = TrackGen.generate(ningJingFence, emptyList(), 345.0, 2000.0, seed = 1).points
         for (i in pts.indices) {
             assertEquals(i, pts[i].secOffset)
         }
@@ -150,100 +150,45 @@ class TrackGenTest {
 
     // ------------------------------------------------------------ 配速形态
 
-    /**
-     * 三种形态都**不允许**改变时长和总里程 —— 采样点数只由「配速 × 距离」决定，
-     * 形态只管这些秒里的速度怎么分配。达标判定因此不受形态影响。
-     */
-    @Test
-    fun `配速形态不能改变时长与里程`() {
-        val base = TrackGen.generate(
-            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 321,
-            profile = PaceProfile.STEADY
-        )
-        for (p in listOf(PaceProfile.NATURAL, PaceProfile.REALISTIC)) {
-            val pts = TrackGen.generate(
-                fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 321, profile = p
-            )
-            assertEquals("$p 改变了点数", base.size, pts.size)
-            assertEquals("$p 距离跑偏", measure(base), measure(pts), 2000.0 * 0.002)
-        }
-    }
-
-    /** 恒定形态每步等距；两种起伏形态必须有明显快慢差异。 */
-    @Test
-    fun `起伏形态的逐秒步长要有变化`() {
-        fun span(p: PaceProfile): Double {
-            val pts = TrackGen.generate(
-                fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 777, profile = p
-            )
-            val steps = (0 until pts.size - 1).map {
-                Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
-            }
-            return steps.max() - steps.min()
-        }
-
-        val steady = span(PaceProfile.STEADY)
-        val natural = span(PaceProfile.NATURAL)
-        val realistic = span(PaceProfile.REALISTIC)
-
-        assertTrue("恒定形态不该有这么大跨度 $steady", steady < 1.5)
-        assertTrue("温和形态起伏太小 $natural", natural > steady * 1.5)
-        assertTrue("拟真形态起伏太小 $realistic", realistic > natural)
-    }
-
-    /** 拟真形态要真的出现"停下来"的秒（步长接近 0），温和形态不应该停。 */
-    @Test
-    fun `拟真形态含停顿而温和形态不含`() {
-        fun pauses(p: PaceProfile): Int {
-            val pts = TrackGen.generate(
-                fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 4242, profile = p
-            )
-            return (0 until pts.size - 1).count {
-                Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon) < 0.4
-            }
-        }
-        assertTrue("拟真形态应该有停顿点，实际 ${pauses(PaceProfile.REALISTIC)}", pauses(PaceProfile.REALISTIC) > 0)
-        assertEquals("温和形态不该有停顿点", 0, pauses(PaceProfile.NATURAL))
-    }
-
     /** 起伏再大，围栏和禁跑区这两条硬约束也不能破。 */
     @Test
-    fun `起伏形态同样不能越界`() {
-        for (p in PaceProfile.values()) {
+    fun `各种配速与种子下都不能越界`() {
+        for (pace in paces) {
             for (seed in listOf(1, 99, 555, 2026)) {
                 val pts = TrackGen.generate(
-                    fengHuaFence, listOf(fengHuaJpq), 330.0, 2000.0, seed = seed, profile = p
-                )
+                    fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = seed
+                ).points
                 val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
                 val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
-                assertEquals("$p seed=$seed 有点跑到围栏外", pts.size, inside)
-                assertEquals("$p seed=$seed 有 $banned 个点落在禁跑区", 0, banned)
+                assertEquals("pace=$pace seed=$seed 有点跑到围栏外", pts.size, inside)
+                assertEquals("pace=$pace seed=$seed 有 $banned 个点落在禁跑区", 0, banned)
             }
         }
     }
 
-    /** speed 字段必须与轨迹自洽：它现在是按最终坐标反推的。 */
+    /** 温和起伏：逐秒步长必须有明显快慢差异，且出现短暂停顿。 */
     @Test
-    fun `汇报速度与实际位移一致`() {
+    fun `温和起伏既要有快慢差异也要有停顿`() {
         val pts = TrackGen.generate(
-            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 31,
-            profile = PaceProfile.NATURAL
-        )
-        for (i in 0 until pts.size - 1) {
-            val d = Geo.hav(pts[i].lat, pts[i].lon, pts[i + 1].lat, pts[i + 1].lon)
-            assertEquals("第 $i 点 speed 与位移不符", d, pts[i].speed, 0.02)
+            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 777
+        ).points
+        val steps = (0 until pts.size - 1).map {
+            Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
         }
+        val span = steps.max() - steps.min()
+        assertTrue("步长跨度只有 $span，起伏太平", span > 1.0)
+        assertTrue("没有任何停顿点，不像真人", steps.count { it < 0.4 } > 0)
     }
 
-    /** 配速形态字符串映射。 */
+    /** 配速窗口的计算。 */
     @Test
-    fun `配速形态字符串映射正确`() {
-        assertEquals(PaceProfile.STEADY, TrackGen.toProfile(TrackGen.PACE_STEADY))
-        assertEquals(PaceProfile.REALISTIC, TrackGen.toProfile(TrackGen.PACE_REALISTIC))
-        assertEquals(PaceProfile.NATURAL, TrackGen.toProfile(TrackGen.PACE_NATURAL))
-        // 未知 / 空值退回默认
-        assertEquals(PaceProfile.NATURAL, TrackGen.toProfile(null))
-        assertEquals(PaceProfile.NATURAL, TrackGen.toProfile("乱写的"))
+    fun `配速窗口计算正确`() {
+        val w = TrackGen.paceWindow(345.0, 20.0)
+        assertEquals(325.0, w.start, 1e-9)
+        assertEquals(365.0, w.endInclusive, 1e-9)
+        // 窗口下限不能被压到 60 秒以下（不合理配速）
+        val w2 = TrackGen.paceWindow(70.0, 30.0)
+        assertEquals(60.0, w2.start, 1e-9)
     }
 
     @Test

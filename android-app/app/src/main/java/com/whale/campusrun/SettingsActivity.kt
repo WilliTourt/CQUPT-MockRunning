@@ -1,7 +1,8 @@
 /*
- * 设置页：主题 / 成绩统计 / 取码 / 使用教程 / 说明信息 / 开源仓库。
+ * 设置页：账号（openid）/ 主题 / 成绩统计 / 取码 / 使用教程 / 说明信息 / 开源仓库。
  *
- * 主页只留打卡，其余全部收在这里。
+ * 主页只放打卡相关设置，其余全部收在这里。
+ * 顶栏固定显示「设置」和返回箭头。
  *
  * 作者：WilliTourt的蓝色大肥鱼 🐟
  */
@@ -17,6 +18,8 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -38,6 +41,9 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var segDark: TextView
     private lateinit var segLight: TextView
 
+    private lateinit var etOpenid: EditText
+    private lateinit var btnConnect: Button
+
     private lateinit var scriptScroll: ScrollView
     private lateinit var tvScript: TextView
 
@@ -46,7 +52,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvStatsByPlace: TextView
     private lateinit var tvStatsList: TextView
 
-    /** 复用一份引擎只为了拉统计 —— 设置页不跑打卡。 */
+    /** 复用一份引擎用于连接与拉统计 —— 设置页不跑打卡。 */
     private val engine by lazy { RunEngine(Api(), object : RunListener {
         override fun log(line: String) {
             // 统计拉取的错误信息直接落在 tvStatsSummary 上，这里忽略
@@ -70,6 +76,9 @@ class SettingsActivity : AppCompatActivity() {
         segDark = findViewById(R.id.segThemeDark)
         segLight = findViewById(R.id.segThemeLight)
 
+        etOpenid = findViewById(R.id.etOpenid)
+        btnConnect = findViewById(R.id.btnConnect)
+
         scriptScroll = findViewById(R.id.scriptScroll)
         tvScript = findViewById(R.id.tvScript)
 
@@ -78,7 +87,16 @@ class SettingsActivity : AppCompatActivity() {
         tvStatsByPlace = findViewById(R.id.tvStatsByPlace)
         tvStatsList = findViewById(R.id.tvStatsList)
 
-        findViewById<TextView>(R.id.btnBack).setOnClickListener { finish() }
+        etOpenid.setText(prefs.getString("openid", ""))
+        btnConnect.setOnClickListener { doConnect() }
+
+        // openid 帮助折叠区
+        val help = findViewById<View>(R.id.panelOpenidHelp)
+        findViewById<Button>(R.id.btnToggleOpenidHelp).setOnClickListener {
+            help.visibility = if (help.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+
+        findViewById<ImageButton>(R.id.btnBack).setOnClickListener { finish() }
 
         segAuto.setOnClickListener { applyThemeMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM) }
         segDark.setOnClickListener { applyThemeMode(AppCompatDelegate.MODE_NIGHT_YES) }
@@ -100,6 +118,69 @@ class SettingsActivity : AppCompatActivity() {
 
         loadScript()
         updateThemeUi()
+    }
+
+    // ---------------------------------------------------------------- 账号
+
+    /**
+     * 连接并拉取场地。
+     *
+     * 场地的选择在主页做，所以这里连上之后只需把结果留在引擎里、
+     * 让用户回主页去选；这里给出明确的成功 / 失败反馈。
+     */
+    private fun doConnect() {
+        if (busy) return
+        val oid = etOpenid.text.toString().trim()
+        if (oid.isEmpty()) {
+            toast(getString(R.string.need_openid))
+            return
+        }
+        prefs.edit().putString("openid", oid).apply()
+        busy = true
+        btnConnect.isEnabled = false
+        val old = btnConnect.text
+        btnConnect.text = getString(R.string.conn_connecting)
+
+        Thread {
+            var netFail = false
+            var got = 0
+            try {
+                if (engine.connect(oid)) {
+                    engine.fetchRule()
+                    val list = engine.fetchAreas()
+                    netFail = engine.netFail
+                    got = list.size
+                } else {
+                    netFail = engine.netFail
+                }
+            } catch (t: Throwable) {
+                // 异常同样按失败处理，不让界面卡在"连接中"
+            } finally {
+                ui.post {
+                    busy = false
+                    btnConnect.isEnabled = true
+                    btnConnect.text = old
+                    when {
+                        netFail -> showConnectFailed()
+                        got == 0 -> toast(getString(R.string.conn_no_area))
+                        else -> toast(getString(R.string.conn_ok))
+                    }
+                }
+            }
+        }.start()
+    }
+
+    /** 连不上服务器时，和主页用同一个对话框，措辞保持一致。 */
+    private fun showConnectFailed() {
+        try {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.conn_failed_title)
+                .setMessage(R.string.conn_failed_msg)
+                .setPositiveButton(R.string.ok, null)
+                .show()
+        } catch (_: Throwable) {
+            toast(getString(R.string.conn_failed_toast))
+        }
     }
 
     // ---------------------------------------------------------------- 主题
@@ -188,19 +269,6 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }.start()
-    }
-
-    /** 连不上服务器时，和主页用同一个对话框，措辞保持一致。 */
-    private fun showConnectFailed() {
-        try {
-            AlertDialog.Builder(this)
-                .setTitle(R.string.conn_failed_title)
-                .setMessage(R.string.conn_failed_msg)
-                .setPositiveButton(R.string.ok, null)
-                .show()
-        } catch (_: Throwable) {
-            toast(getString(R.string.conn_failed_toast))
-        }
     }
 
     private fun renderStats(s: Stats) {

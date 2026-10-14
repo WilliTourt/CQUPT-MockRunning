@@ -319,7 +319,7 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         realtime: Boolean,
         noise: Double,
         seed: Int,
-        profile: PaceProfile = PaceProfile.NATURAL,
+        paceToleranceSec: Double = TrackGen.DEFAULT_PACE_TOLERANCE_SEC,
         validate: Boolean = true
     ) {
         cancel = false
@@ -335,7 +335,8 @@ class RunEngine(private val api: Api, private val l: RunListener) {
 
         val rule = fetchRule()
         if (rule != null && (paceSecKm < rule.minPace || paceSecKm > rule.maxPace)) {
-            l.log("   ⚠ 配速 ${fmtPace(paceSecKm)} 落在允许区间之外！建议 ${fmtPace(rule.suggest())}")
+            l.log("   ⚠ 配速 ${fmtPace(paceSecKm)} 落在服务端允许区间之外！"
+                    + "建议 ${fmtPace(rule.suggest())}")
         }
 
         l.log("④ 生成轨迹（区域：${area.placeName}）")
@@ -343,10 +344,26 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         push()
 
         val t0 = System.currentTimeMillis()
-        val track = TrackGen.generate(
-            area.fence, area.excludes, paceSecKm, targetM, noise, seed, profile
+        val res = TrackGen.generate(
+            poly = area.fence,
+            excludes = area.excludes,
+            paceSecKm = paceSecKm,
+            targetM = targetM,
+            noise = noise,
+            seed = seed,
+            paceToleranceSec = paceToleranceSec
         )
+        val track = res.points
         l.log("   ${TrackGen.summarize(track)}  (耗时 ${System.currentTimeMillis() - t0} ms)")
+
+        // 平均配速是否落在「目标 ± 容差」内
+        l.log("   平均配速 ${fmtPace(res.paceSecKm)}，"
+                + "允许 ${fmtPace(res.window.start)}~${fmtPace(res.window.endInclusive)}"
+                + if (res.adjusted) "（已自动微调采样点数压进窗口）" else "")
+        if (!res.inWindow) {
+            l.log("   ⚠ 平均配速仍在窗口外，距离可能被噪声顶到下限")
+        }
+
         val paceRange = paceRangeOf(track)
 
         if (validate) {

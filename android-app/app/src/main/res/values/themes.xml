@@ -13,7 +13,7 @@
         <item name="colorAccent">@color/accent</item>
         <item name="android:textColorPrimary">@color/fg</item>
         <item name="android:textColorSecondary">@color/fg_dim</item>
-        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:statusBarColor">@color/box</item>
         <item name="android:navigationBarColor">@color/bg</item>
         <!-- windowLightStatusBar 是 API 23，minSdk 24 已经覆盖 -->
         <item name="android:windowLightStatusBar">true</item>

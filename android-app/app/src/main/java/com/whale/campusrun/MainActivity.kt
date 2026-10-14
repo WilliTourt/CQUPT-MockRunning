@@ -1,11 +1,11 @@
 /*
  * 鲸鲸约跑 · 主页
  *
- * 主页只负责「打卡」。主题 / 统计 / 取码 / 说明 / 使用教程 / 开源仓库
- * 全部移到右上角「设置」页（SettingsActivity）。
+ * 主页**只放打卡相关设置**：场地、配速、距离、容差、开始按钮、仪表盘。
+ * openid 输入在【设置】页，运行日志在【日志】页 —— 右上角两个小图标分别进入。
  *
  * 跑步线程归 RunController（单例）所有，本 Activity 只是观察者。
- * 所以退出 App、锁屏、被系统重建 —— 进度和日志都能完整恢复。
+ * 所以退出 App、锁屏、被系统重建 —— 进度都能完整恢复。
  *
  * 作者：WilliTourt的蓝色大肥鱼 🐟
  */
@@ -21,9 +21,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -35,16 +38,12 @@ import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity(), RunListener {
 
-    private lateinit var etOpenid: EditText
     private lateinit var etPace: EditText
     private lateinit var etDist: EditText
+    private lateinit var etTol: EditText
     private lateinit var spArea: Spinner
-    private lateinit var btnConnect: Button
     private lateinit var btnRun: Button
-
-    private lateinit var segNatural: TextView
-    private lateinit var segRealistic: TextView
-    private lateinit var segSteady: TextView
+    private lateinit var tvPaceWindow: TextView
 
     private lateinit var bar: ProgressBar
     private lateinit var tvPercent: TextView
@@ -53,9 +52,7 @@ class MainActivity : AppCompatActivity(), RunListener {
     private lateinit var tvPaceInfo: TextView
     private lateinit var tvBatches: TextView
     private lateinit var tvServer: TextView
-
-    private lateinit var logScroll: ScrollView
-    private lateinit var tvLog: TextView
+    private lateinit var tvLastLog: TextView
     private lateinit var rootScroll: ScrollView
 
     private val api = Api()
@@ -78,16 +75,12 @@ class MainActivity : AppCompatActivity(), RunListener {
         engine = RunEngine(api, this)
 
         rootScroll = findViewById(R.id.scroll)
-        etOpenid = findViewById(R.id.etOpenid)
         etPace = findViewById(R.id.etPace)
         etDist = findViewById(R.id.etDist)
+        etTol = findViewById(R.id.etTol)
         spArea = findViewById(R.id.spArea)
-        btnConnect = findViewById(R.id.btnConnect)
         btnRun = findViewById(R.id.btnRun)
-
-        segNatural = findViewById(R.id.segNatural)
-        segRealistic = findViewById(R.id.segRealistic)
-        segSteady = findViewById(R.id.segSteady)
+        tvPaceWindow = findViewById(R.id.tvPaceWindow)
 
         bar = findViewById(R.id.bar)
         tvPercent = findViewById(R.id.tvPercent)
@@ -96,30 +89,32 @@ class MainActivity : AppCompatActivity(), RunListener {
         tvPaceInfo = findViewById(R.id.tvPaceInfo)
         tvBatches = findViewById(R.id.tvBatches)
         tvServer = findViewById(R.id.tvServer)
+        tvLastLog = findViewById(R.id.tvLastLog)
 
-        logScroll = findViewById(R.id.logScroll)
-        tvLog = findViewById(R.id.tvLog)
-
-        etOpenid.setText(prefs.getString("openid", ""))
         etPace.setText(prefs.getString("pace", "5:45"))
         etDist.setText(prefs.getString("dist", "2.0"))
+        etTol.setText(prefs.getString("paceTol", "20"))
 
-        btnConnect.setOnClickListener { doConnect() }
-        btnRun.setOnClickListener { if (RunController.running) doStop() else doRun() }
-        findViewById<TextView>(R.id.btnSettings).setOnClickListener {
+        findViewById<ImageButton>(R.id.btnLog).setOnClickListener {
+            startActivity(Intent(this, LogActivity::class.java))
+        }
+        findViewById<ImageButton>(R.id.btnSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        segNatural.setOnClickListener { setPaceMode(TrackGen.PACE_NATURAL) }
-        segRealistic.setOnClickListener { setPaceMode(TrackGen.PACE_REALISTIC) }
-        segSteady.setOnClickListener { setPaceMode(TrackGen.PACE_STEADY) }
-        findViewById<Button>(R.id.btnClear).setOnClickListener {
-            tvLog.text = ""
-            toast(getString(R.string.log_cleared))
+
+        btnRun.setOnClickListener { if (RunController.running) doStop() else doRun() }
+
+        // 配速 / 容差改动时刷新"允许窗口"提示
+        val watcher = object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) = updatePaceWindow()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
-        findViewById<Button>(R.id.btnShare).setOnClickListener { shareLog() }
+        etPace.addTextChangedListener(watcher)
+        etTol.addTextChangedListener(watcher)
 
         updateBatteryHint()
-        updatePaceModeUi()
+        updatePaceWindow()
         askNotificationPermission()
         restoreOrInit()
     }
@@ -129,12 +124,10 @@ class MainActivity : AppCompatActivity(), RunListener {
     override fun onStart() {
         super.onStart()
         RunController.addListener(this)
-        // 重新附着：把单例里缓存的日志和状态整个捞回来
-        val buf = RunController.logSnapshot()
-        tvLog.text = if (buf.isEmpty()) "" else buf.joinToString("\n")
-        scrollLogToBottom()
         onState(RunController.state)
         refreshRunButton()
+        val buf = RunController.logSnapshot()
+        tvLastLog.text = buf.lastOrNull() ?: getString(R.string.log_hint_short)
         if (buf.isEmpty()) welcome()
     }
 
@@ -143,13 +136,10 @@ class MainActivity : AppCompatActivity(), RunListener {
         super.onStop()
     }
 
-    /**
-     * 从系统设置页返回时刷新电池白名单状态。
-     * 只放在 onCreate 里的话，用户授权完回来还得重启 App 才变色。
-     */
     override fun onResume() {
         super.onResume()
         updateBatteryHint()
+        updatePaceWindow()
     }
 
     private fun restoreOrInit() {
@@ -158,49 +148,20 @@ class MainActivity : AppCompatActivity(), RunListener {
         }
     }
 
-    // ---------------------------------------------------------------- 日志滚动
+    // ---------------------------------------------------------------- 配速窗口
 
-    /** 日志滚到底。刻意绕开 fullScroll —— 它内部会 requestFocus，引起外层滚动。 */
-    private fun scrollLogToBottom() {
-        logScroll.post {
-            val child = logScroll.getChildAt(0) ?: return@post
-            logScroll.scrollTo(0, child.height)
+    private fun updatePaceWindow() {
+        val pace = RunEngine.parsePace(etPace.text.toString())
+        val tol = etTol.text.toString().trim().toDoubleOrNull()
+        if (pace == null || tol == null || pace < 60 || tol < 0) {
+            tvPaceWindow.text = getString(R.string.pace_window_bad)
+            return
         }
-    }
-
-    private fun scrollTop() {
-        currentFocus?.clearFocus()
-        rootScroll.post {
-            rootScroll.scrollTo(0, 0)
-            rootScroll.post { rootScroll.scrollTo(0, 0) }
-        }
-    }
-
-    // ---------------------------------------------------------------- 配速形态
-
-    private fun setPaceMode(key: String) {
-        prefs.edit().putString("paceMode", key).apply()
-        updatePaceModeUi()
-    }
-
-    /** 选中的那块填色，其余透明 —— 和标签栏同一套分段控件样式。 */
-    private fun updatePaceModeUi() {
-        val cur = prefs.getString("paceMode", TrackGen.PACE_NATURAL)
-        seg(segNatural, cur == TrackGen.PACE_NATURAL)
-        seg(segRealistic, cur == TrackGen.PACE_REALISTIC)
-        seg(segSteady, cur == TrackGen.PACE_STEADY)
-    }
-
-    private fun seg(t: TextView, active: Boolean) {
-        if (active) {
-            t.setBackgroundResource(R.drawable.seg_selected)
-            t.setTextColor(ContextCompat.getColor(this, R.color.on_accent))
-            t.setTypeface(null, android.graphics.Typeface.BOLD)
-        } else {
-            t.setBackgroundResource(R.drawable.seg_normal)
-            t.setTextColor(ContextCompat.getColor(this, R.color.fg_dim))
-            t.setTypeface(null, android.graphics.Typeface.NORMAL)
-        }
+        val w = TrackGen.paceWindow(pace, tol)
+        tvPaceWindow.text = getString(
+            R.string.pace_window,
+            RunEngine.fmtPace(w.start), RunEngine.fmtPace(w.endInclusive)
+        )
     }
 
     // ---------------------------------------------------------------- 打卡
@@ -209,61 +170,41 @@ class MainActivity : AppCompatActivity(), RunListener {
         log("鲸鲸约跑 v${BuildConfig.VERSION_NAME} · 由 WilliTourt的蓝色大肥鱼 🐟 编写")
         log("")
         log("本程序不申请定位权限，也不会打开 GPS。")
-        log("① 填 openid → 点【连接并拉取场地】；② 设好配速 → 点【开始打卡】。")
-        log("开始之后就可以退出了：锁屏、切走、揣兜里都行，")
-        log("有前台服务守着，通知栏能看到进度，回来也不会丢。")
+        log("① openid 在右上角【设置】里填，连一次场地；")
+        log("② 回到本页设好配速 → 点【开始打卡】。")
+        log("开始之后就可以退出了：锁屏、切走、揣兜里都行。")
         log("这段时间你就去操场上挨个摄像头刷脸。")
-        log("")
-        log("更多设置、统计、取码和教程在右上角【设置】里。")
     }
 
-    private fun doConnect() {
-        if (busy) return
-        val openid = etOpenid.text.toString().trim()
-        if (openid.isEmpty()) {
-            toast(getString(R.string.need_openid))
-            return
+    private fun openid(): String = prefs.getString("openid", "").orEmpty().trim()
+
+    /**
+     * 连接并拉取场地。必须在后台线程调用；界面更新内部自己 post 到主线程。
+     *
+     * @return 是否拿到了可用场地
+     */
+    private fun connectAndFetch(oid: String): Boolean {
+        if (!engine.connect(oid)) {
+            if (engine.netFail) ui.post { showConnectFailed() }
+            return false
         }
-        savePrefs()
-        busy = true
-        setEnabled(false)
-        Thread {
-            var netFail = false
-            var got = 0
-            try {
-                if (engine.connect(openid)) {
-                    engine.fetchRule()
-                    val list = engine.fetchAreas()
-                    netFail = engine.netFail
-                    got = list.size
-                    ui.post {
-                        areas = list
-                        bindAreas(list)
-                    }
-                } else {
-                    netFail = engine.netFail
-                }
-            } catch (t: Throwable) {
-                logStack("连接", t)
-            } finally {
-                ui.post {
-                    busy = false
-                    setEnabled(true)
-                    when {
-                        // 拉取场地时连不上服务器 —— 明确告诉用户，而不是静默留空列表
-                        netFail -> showConnectFailed()
-                        got == 0 -> toast(getString(R.string.conn_no_area))
-                        else -> toast(getString(R.string.conn_ok))
-                    }
-                }
-            }
-        }.start()
+        engine.fetchRule()
+        val list = engine.fetchAreas()
+        ui.post {
+            areas = list
+            bindAreas(list)
+        }
+        if (engine.netFail) {
+            ui.post { showConnectFailed() }
+            return false
+        }
+        return list.isNotEmpty()
     }
 
     /**
      * 连不上服务器时的提示。
      *
-     * 触发时机就是「点连接并拉取场地」这一步 —— 原来的实现只往日志里写一行
+     * 触发时机就是「连接并拉取场地」这一步 —— 原来的实现只往日志里写一行
      * 「网络失败」，界面上是个空场地列表，用户根本不知道发生了什么。
      */
     private fun showConnectFailed() {
@@ -279,10 +220,18 @@ class MainActivity : AppCompatActivity(), RunListener {
         scrollTop()
     }
 
+    private fun scrollTop() {
+        currentFocus?.clearFocus()
+        rootScroll.post {
+            rootScroll.scrollTo(0, 0)
+            rootScroll.post { rootScroll.scrollTo(0, 0) }
+        }
+    }
+
     private fun doRun() {
         if (busy) return
-        val openid = etOpenid.text.toString().trim()
-        if (openid.isEmpty()) {
+        val oid = openid()
+        if (oid.isEmpty()) {
             toast(getString(R.string.need_openid))
             return
         }
@@ -296,24 +245,43 @@ class MainActivity : AppCompatActivity(), RunListener {
             toast(getString(R.string.bad_dist))
             return
         }
-        val area = areas.getOrNull(spArea.selectedItemPosition)
-        if (area == null) {
-            toast(getString(R.string.need_area))
+        val tol = etTol.text.toString().trim().toDoubleOrNull()
+        if (tol == null || tol < 0) {
+            toast(getString(R.string.bad_tol))
             return
         }
         savePrefs()
-        runOnUiThread { tvLog.text = "" }
 
-        RunController.start(
-            openid = openid,
-            area = area,
-            paceSecKm = pace,
-            targetM = dist * 1000.0,
-            noise = 0.6,
-            seed = (System.currentTimeMillis() % 100000).toInt(),
-            profile = TrackGen.toProfile(prefs.getString("paceMode", TrackGen.PACE_NATURAL))
-        )
-        refreshRunButton()
+        busy = true
+        setEnabled(false)
+        Thread {
+            try {
+                // 还没拉过场地就先拉一次（openid 是在设置页填的）
+                if (areas.isEmpty()) connectAndFetch(oid)
+            } catch (t: Throwable) {
+                logStack("连接", t)
+            } finally {
+                ui.post {
+                    busy = false
+                    setEnabled(true)
+                    val area = areas.getOrNull(spArea.selectedItemPosition)
+                    if (area == null) {
+                        toast(getString(R.string.need_area))
+                        return@post
+                    }
+                    RunController.start(
+                        openid = oid,
+                        area = area,
+                        paceSecKm = pace,
+                        targetM = dist * 1000.0,
+                        noise = 0.6,
+                        seed = (System.currentTimeMillis() % 100000).toInt(),
+                        paceToleranceSec = tol
+                    )
+                    refreshRunButton()
+                }
+            }
+        }.start()
     }
 
     private fun doStop() {
@@ -374,11 +342,9 @@ class MainActivity : AppCompatActivity(), RunListener {
 
     // ---------------------------------------------------------------- 日志
 
+    /** 主页不铺日志，只在摘要条里显示最后一行；完整日志在【日志】页。 */
     override fun log(line: String) {
-        ui.post {
-            tvLog.append(if (tvLog.text.isEmpty()) line else "\n$line")
-            scrollLogToBottom()
-        }
+        ui.post { tvLastLog.text = line }
     }
 
     private fun logStack(where: String, t: Throwable) {
@@ -451,43 +417,28 @@ class MainActivity : AppCompatActivity(), RunListener {
 
     private fun bindAreas(list: List<Area>) {
         val names = if (list.isEmpty()) listOf(getString(R.string.need_area)) else list.map { it.toString() }
-        spArea.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
+        spArea.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, names
+        )
         val lastCode = prefs.getString("placeCode", "")
         val idx = list.indexOfFirst { it.placeCode == lastCode }
         if (idx >= 0) spArea.setSelection(idx)
     }
 
     private fun setEnabled(on: Boolean) {
-        btnConnect.isEnabled = on
-        etOpenid.isEnabled = on
         etPace.isEnabled = on
         etDist.isEnabled = on
+        etTol.isEnabled = on
         spArea.isEnabled = on
     }
 
     private fun savePrefs() {
         prefs.edit()
-            .putString("openid", etOpenid.text.toString().trim())
             .putString("pace", etPace.text.toString().trim())
             .putString("dist", etDist.text.toString().trim())
+            .putString("paceTol", etTol.text.toString().trim())
             .putString("placeCode", areas.getOrNull(spArea.selectedItemPosition)?.placeCode ?: "")
             .apply()
-    }
-
-    private fun shareLog() {
-        val text = tvLog.text.toString()
-        if (text.isBlank()) {
-            toast(getString(R.string.log_empty))
-            return
-        }
-        startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, text)
-                }, "导出日志"
-            )
-        )
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()

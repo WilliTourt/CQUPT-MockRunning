@@ -63,7 +63,7 @@ object RunController {
         targetM: Double,
         noise: Double,
         seed: Int,
-        profile: PaceProfile = PaceProfile.NATURAL
+        paceToleranceSec: Double = TrackGen.DEFAULT_PACE_TOLERANCE_SEC
     ) {
         if (running) return
         running = true
@@ -85,10 +85,10 @@ object RunController {
                     area = area,
                     paceSecKm = paceSecKm,
                     targetM = targetM,
-                    realtime = true,          // 服务端按墙钟算配速，必须实时
+                    realtime = true,          // 服务端按墙钟算配速，必须超实时
                     noise = noise,
                     seed = seed,
-                    profile = profile
+                    paceToleranceSec = paceToleranceSec
                 )
             } catch (t: Throwable) {
                 log("✗ 运行异常：${t.javaClass.name}: ${t.message}")

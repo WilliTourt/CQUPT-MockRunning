@@ -9,6 +9,7 @@ build/
 captures/
 .externalNativeBuild/
 .cxx/
+.buildenv
 
 # ─────────── IDE ───────────
 .idea/

@@ -12,7 +12,7 @@
 | 名称 | 鲸鲸约跑（CampusRun） |
 | 一句话 | 微信小程序「重邮智慧体育」的打卡工具，**安卓单机版** |
 | 作者 | WilliTourt的蓝色大肥鱼 🐟 |
-| 当前版本 | **v1.9**（`versionCode 9` / `versionName "1.9"`） |
+| 当前版本 | **v1.9.0**（`versionCode 10900` / `versionName "1.9.0"`）—— 由版本分支 `V1.9.0` 推导，规则见 [§5.1](#51-版本号规则semver-20) |
 | License | MIT |
 | 仓库 | https://github.com/gufandf/CQUPT-MockRunning |
 | 目标服务 | `https://sport.cqupt.edu.cn/new_wxapp`（重邮智慧体育小程序后端） |
@@ -75,7 +75,7 @@ CQUPT-MockRunning/
 └── CHANGELOG.md              版本变更记录（Keep a Changelog 格式）
 ```
 
-**界面结构约定（v1.9 起）**：主页只放打卡相关内容；主题、统计、取码、教程、
+**界面结构约定（v1.9.0 起）**：主页只放打卡相关内容；主题、统计、取码、教程、
 说明、开源仓库一律放 `SettingsActivity`。新增非打卡功能请加到设置页，不要堆回主页。
 
 ---
@@ -102,25 +102,103 @@ python track_engine.py gen --pace 5:45 --dist 2.0 --crs gcj02 --out track.json
 
 **改动 `TrackGen.kt` 后必须跑 `testDebugUnitTest`**，它会断言这几条硬指标：
 实测配速 == 目标配速（误差 ≤ 1 秒）、所有点落在电子围栏内、没有点落在禁跑区、
-**配速形态不改变时长与里程**、拟真形态含停顿而温和形态不含、汇报速度与实际位移一致。
+**平均配速始终落在「目标 ± 容差」窗口内**、各种配速与种子下都不能越界、
+温和起伏既要有快慢差异也要有停顿、汇报速度与实际位移一致。
 
 改轨迹算法时，另外跑一遍 Python 镜像做交叉验证（不需要 Android SDK）：
 
 ```bash
 python refs/verify_trackgen.py        # 配速标定 + 围栏判定
-python refs/verify_pace_profile.py    # 三种配速形态 × 3 场地 × 4 配速
+python refs/verify_pace_profile.py    # 配速起伏 × 3 场地 × 4 配速
 ```
+
+**界面结构约定**：主页只放打卡相关内容；openid、主题、统计、取码、教程、说明、
+开源仓库一律放 `SettingsActivity`，运行日志放 `LogActivity`。
+新增非打卡功能请加到设置页，不要堆回主页。两个页面都要有固定顶栏
+（标题 + 返回箭头），顶栏图标用 `app:tint="@color/fg"`（**不要**用 `android:tint`，
+lint 会报 `UseAppTint`）。主页顶栏图标：日志 `ic_log`、设置 `ic_settings`。
+状态栏用 `@color/box` 与顶栏连成一体，底部导航栏用 `@color/bg`。
 
 ---
 
 ## 5. 代码约定
 
 - 注释和用户可见文案一律用中文；注释写**「为什么这么做」**，不写「这行在干什么」。
-- 版本号变更要同时改：`app/build.gradle.kts`(`versionCode`/`versionName`)、
-  `AndroidManifest.xml` 的 `<meta-data android:name="version">`、`CHANGELOG.md`。
+- **版本号必须按 5.1 的规则从版本分支推导**，不要凭感觉手写；要改哪些文件见 5.2 的清单。
 - 不引入新依赖前先想清楚 —— 这个项目的卖点之一就是零依赖。
 - 反编译 / 抓包得到的新结论写进 `refs/FINDINGS.md`，别散落在聊天记录里。
 - 一次性的分析脚本可以放在 `refs/`，但产物（解包目录、strings dump）不要提交，见 `.gitignore`。
+
+### 5.1 版本号规则（SemVer 2.0）
+
+版本号**不是随手写的，而是从「当前开发分支所属的版本分支」引用过来的**：
+仓库里的 `V1.9.0` / `V2.0.0` 这类分支就是版本源，`main` 与 `dev-*` 都是它的下游。
+
+**引用来源 —— 按下面的顺序定出唯一的版本分支：**
+
+1. 快进关系：找出祖先里有 `HEAD` 的版本分支（`git merge-base --is-ancestor <分支> HEAD`），
+   其中**离 `HEAD` 最近**的那个就是当前版本分支。
+2. 并列分叉时，取 `<major>.<minor>.<patch>` 数值最大的一个（用 `sort -V`，不要按字典序）。
+3. 若一个都没有（新开的开发分支还没挂到任何版本分支上），
+   **不要猜版本号**：要么先按「开新版本」建好版本分支再动版本，
+   要么沿用上一版的 `versionName` 并在 `CHANGELOG` 的 `[未发布]` 段落记录改动。
+
+**语义化版本 2.0（`MAJOR.MINOR.PATCH`）—— 只增不减，一旦提交不再修改：**
+
+| 位置 | 什么时候动 | 例子 |
+|---|---|---|
+| `MAJOR` | 对外行为或数据格式**不兼容**的改动（老配置/老流程会坏掉） | 1.9.0 → 2.0.0 |
+| `MINOR` | **向后兼容**地加功能、加选项 | 1.9.0 → 1.10.0 |
+| `PATCH` | **向后兼容**地修缺陷，不改接口与行为约定 | 1.9.0 → 1.9.1 |
+
+- 预发布/构建元数据按标准写法 `1.9.0-rc.1`、`1.9.0+build.5`，
+  **`versionName` 可以用，`versionCode` 一律取主干三段**（见下）。
+- `MINOR` 是数字不是字符串：`1.10.0` 比 `1.9.0` 新，比较时用 `sort -V`。
+- 版本分支命名 = `V` + `versionName`，三段齐全（`V1.9.0`，不要写 `V1.9`）。
+
+**映射到 Android（三段必须同源，改一处就要改全部）：**
+
+```kotlin
+versionName = "1.9.0"                       // 版本分支名去掉前导 V，原样照抄
+versionCode = 10900                         // MAJOR*10000 + MINOR*100 + PATCH
+```
+
+`versionCode` 用这个公式是为了让**数字大小和版本新旧一致**（Google Play 只认单调递增），
+`MINOR`/`PATCH` 各留两位，`1.9.0 → 10900`、`1.10.0 → 11000`、`2.0.0 → 20000`。
+`versionCode` 前补零并无意义，它是整数。
+
+<details>
+<summary>一条命令定出版本（在 <code>android-app/</code> 下跑）</summary>
+
+```bash
+cur=$(git rev-parse --abbrev-ref HEAD)
+base=$(for b in $(git branch --list 'V[0-9]*' --format='%(refname:short)'); do
+         git merge-base --is-ancestor "$b" HEAD 2>/dev/null &&
+           printf '%s %s %s\n' "$(git rev-list --count "$b"..HEAD)" "${b#V}" "$b"
+       done | sort -k1,1n -k2,2rV | head -1 | awk '{print $3}')
+echo "分支 $cur → 版本分支 ${base:-<无>}"
+IFS=. read -r M m p <<< "${base#V}"
+printf 'versionName = "%s.%s.%s"\nversionCode = %d\n' "$M" "$m" "$p" "$((M*10000 + m*100 + p))"
+```
+
+> 取「离 HEAD 最近」用的是 `git rev-list --count <版本分支>..HEAD`（越小越近），
+> 并列时用 `sort -V` 取版本最大者，与规则 1、2 完全一致。
+
+</details>
+
+### 5.2 改版本号时必须同步的位置
+
+| 位置 | 改什么 |
+|---|---|
+| `android-app/app/build.gradle.kts` | `versionCode`（公式值）、`versionName`（版本分支） |
+| `android-app/app/src/main/AndroidManifest.xml` | `<meta-data android:name="version">` = `versionName` |
+| `CHANGELOG.md` | 新增 `## [x.y.z] — 日期 · 摘要` 段落，并在文末补对应的引用式链接 |
+| `AGENT.md` §1 表格 | 「当前版本」一行 |
+| `README.md` / `android-app/README.md` | 头部「当前版本」标记与版本记录段落 |
+
+**不要**在代码里写死版本号：界面显示一律用 `BuildConfig.VERSION_NAME`
+（`MainActivity.kt` / `SettingsActivity.kt` 已经这么做），文案里出现的小版本号
+（如「v1.9 起」）可以保留，它描述的是历史事实，不必跟着改。
 
 ---
 

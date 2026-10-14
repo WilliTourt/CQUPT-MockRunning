@@ -30,7 +30,7 @@
             android:value="@string/app_author" />
         <meta-data
             android:name="version"
-            android:value="1.9" />
+            android:value="1.9.0" />
 
         <activity
             android:name=".MainActivity"
@@ -43,12 +43,20 @@
             </intent-filter>
         </activity>
 
-        <!-- 设置页：主题 / 统计 / 取码 / 教程 / 说明 / 开源仓库 -->
+        <!-- 设置页：账号 openid / 主题 / 统计 / 取码 / 教程 / 说明 / 开源仓库 -->
         <activity
             android:name=".SettingsActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="false"
             android:label="@string/settings"
+            android:parentActivityName=".MainActivity" />
+
+        <!-- 日志页：完整运行日志 -->
+        <activity
+            android:name=".LogActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/log_page"
             android:parentActivityName=".MainActivity" />
 
         <service

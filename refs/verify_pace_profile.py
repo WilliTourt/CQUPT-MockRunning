@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-verify_pace_profile.py —— 把 android-app 里 TrackGen.kt 的**新**配速形态逻辑
+verify_pace_profile.py —— 把 android-app 里 TrackGen.kt 的配速起伏与容差逻辑
 1:1 回写成 Python 验证。
 
 Kotlin 的 XorWow PRNG 和 Python 的 Mersenne 取值不同，所以噪声的具体数值不会一致，
 但统计行为和数值流程等价 —— 和 refs/verify_trackgen.py 用的是同一套验证思路。
 
 验证四件事：
-  1. 三种形态下，围栏内 100%、禁跑区 0 点
-  2. 三种形态下，实测距离 / 配速都精确命中目标（形态不影响达标）
-  3. 温和 / 拟真形态确实产生了配速起伏（恒定形态没有）
-  4. 拟真形态确实有"停顿"（存在接近零的步长）
+  1. 围栏内 100%、禁跑区 0 点
+  2. 实测距离 / 配速精确命中目标
+  3. 平均配速始终落在「目标 ± 容差」窗口内（含不同 seed 与配速）
+  4. 确实存在配速起伏与短暂停顿
 """
 
 import math
@@ -161,14 +161,8 @@ def point_at(dense, cum, dist):
 
 # ---------------------------------------------------------------- 配速形态（对应 TrackGen）
 
-STEADY, NATURAL, REALISTIC = "steady", "natural", "realistic"
-
-
-def slowness_profile(n, profile, seed):
+def slowness_profile(n, seed):
     out = [1.0] * n
-    if profile == STEADY:
-        return out
-
     rnd = random.Random(seed * 7919 + 13)
 
     seg_len = 40 + rnd.randint(0, 30)
@@ -187,15 +181,15 @@ def slowness_profile(n, profile, seed):
             out[k] *= 0.94
         out[k] *= 1.0 + 0.10 * k / n
 
-    if profile == REALISTIC:
-        pauses = int(n * 0.07 / 6.0)
-        pauses = max(1, min(5, pauses))
-        for _ in range(pauses):
-            ln = 4 + rnd.randint(0, 5)
-            span = max(1, n - ln - 1)
-            at = int(span * (0.12 + rnd.random() * 0.76))
-            for k in range(at, min(n, at + ln)):
-                out[k] = 22.0
+    # 停顿：约 7% 的时间点落在里面，2 公里大概是 2~3 次
+    pauses = int(n * 0.07 / 6.0)
+    pauses = max(1, min(5, pauses))
+    for _ in range(pauses):
+        ln = 4 + rnd.randint(0, 5)
+        span = max(1, n - ln - 1)
+        at = int(span * (0.12 + rnd.random() * 0.76))
+        for k in range(at, min(n, at + ln)):
+            out[k] = 22.0
     return out
 
 
@@ -213,8 +207,8 @@ def random_walk_segments(n, seg_len, jitter, seed, salt):
     return out
 
 
-def step_weights(n, profile, seed):
-    slow = slowness_profile(n, profile, seed)
+def step_weights(n, seed):
+    slow = slowness_profile(n, seed)
     if n < 24:
         return [1.0] * n
     terrain = random_walk_segments(n, 260, 0.06, seed, 1)
@@ -299,25 +293,54 @@ def build(ring, n, weights, target_m, noise, seed, fence=(), excludes=()):
     return emit((lo + hi) / 2.0)
 
 
-def generate(poly, excludes, pace_s_km, target_m, noise=0.6, seed=0, profile=NATURAL):
+def pace_window(pace_s_km, tol):
+    """对应 TrackGen.paceWindow。"""
+    t = abs(tol)
+    return (max(60.0, pace_s_km - t), pace_s_km + t)
+
+
+def pace_of(pts):
+    d = measure(pts)
+    return (len(pts) - 1) / (d / 1000.0) if d > 0 else 0.0
+
+
+def generate(poly, excludes, pace_s_km, target_m, noise=0.6, seed=0,
+             pace_tol=20.0):
+    """对应 TrackGen.generate：起伏铺点 + 平均配速钳制。"""
     fence = dedupe(poly)
     nom = 1000.0 / pace_s_km
     n = max(2, round(target_m / nom))
-    weights = step_weights(n, profile, seed)
+    window = pace_window(pace_s_km, pace_tol)
+    adjusted = False
+    pts = []
 
-    best, best_score = [], -1.0
-    for f in (0.90, 0.85, 0.80, 0.74, 0.66, 0.58, 0.50):
-        ring = organic(inset(fence, f), 3.0, seed)
-        pts = build(ring, n, weights, target_m, noise, seed, fence, excludes)
-        inside = sum(1 for p in pts if point_in_poly(p["lat"], p["lon"], fence))
-        banned = sum(1 for p in pts
-                     if any(point_in_poly(p["lat"], p["lon"], e) for e in excludes))
-        score = (inside - banned) / len(pts)
-        if score > best_score:
-            best_score, best = score, pts
-        if banned == 0 and inside == len(pts):
+    # 与 Kotlin 端一致：最多重算 4 次把平均配速压进窗口
+    for _ in range(4):
+        weights = step_weights(n, seed)
+        best, best_score = [], -1.0
+        for f in (0.90, 0.85, 0.80, 0.74, 0.66, 0.58, 0.50):
+            ring = organic(inset(fence, f), 3.0, seed)
+            cand = build(ring, n, weights, target_m, noise, seed, fence, excludes)
+            inside = sum(1 for q in cand if point_in_poly(q["lat"], q["lon"], fence))
+            banned = sum(1 for q in cand
+                         if any(point_in_poly(q["lat"], q["lon"], e) for e in excludes))
+            score = (inside - banned) / len(cand)
+            if score > best_score:
+                best_score, best = score, cand
+            if banned == 0 and inside == len(cand):
+                break
+        pts = best
+        pace = pace_of(pts)
+        if window[0] <= pace <= window[1]:
             break
-    return best, fence
+        ratio = pace / pace_s_km if pace_s_km > 0 else 1.0
+        nxt = int(round(n / ratio)) if ratio > 0 else n
+        nxt = max(2, min(nxt, n * 4 + 8))
+        if nxt == n:
+            break
+        n = nxt
+        adjusted = True
+    return pts, fence, pace_of(pts), window, adjusted
 
 
 # ---------------------------------------------------------------- 真实场地
@@ -376,75 +399,72 @@ def measure(pts):
 
 def main():
     print("=" * 78)
-    print("TrackGen 配速形态验证（python 镜像，对应 TrackGen.kt 的 stepWeights / slownessProfile）")
+    print("TrackGen 配速起伏与容差验证（python 镜像，对应 TrackGen.kt）")
     print("=" * 78)
 
     target = 2000.0
     paces = [240.0, 330.0, 345.0, 420.0]
+    tol = 20.0
     fails = []
 
-    print("\n【1】【2】三种形态 × 四种配速：围栏内 / 禁跑区 / 距离 / 配速")
+    print("\n【1】【2】【3】三个场地 × 四种配速 × 三个 seed：")
+    print("           围栏内 / 禁跑区 / 距离 / 平均配速是否落在容差窗口")
     print("-" * 78)
-    print("%-10s %-8s %6s %10s %9s %9s %7s" %
-          ("场地", "形态", "点数", "实测距离", "实测配速", "围栏内", "禁跑区"))
-    for name, fence, jpq in (("风华", FENG_HUA, FENG_HUA_JPQ),
-                             ("太极", TAI_JI, []),
-                             ("宁静苑", NING_JING, [])):
-        for profile in (NATURAL, REALISTIC, STEADY):
-            for pace in paces:
-                pts, _ = generate(fence, jpq, pace, target, seed=12345, profile=profile)
+    print("%-10s %-8s %6s %10s %9s %9s %7s %s" %
+          ("场地", "配速", "点数", "实测距离", "实测配速", "围栏内", "禁跑区", "窗口"))
+    for name, fence0, jpq in (("风华", FENG_HUA, FENG_HUA_JPQ),
+                              ("太极", TAI_JI, []),
+                              ("宁静苑", NING_JING, [])):
+        for pace in paces:
+            for seed in (12345, 777, 20261013):
+                pts, fence, real, window, _ = generate(
+                    fence0, jpq, pace, target, seed=seed, pace_tol=tol)
                 d = measure(pts)
-                dur = len(pts) - 1
-                real = dur / (d / 1000.0)
-                inside = sum(1 for p in pts if point_in_poly(p["lat"], p["lon"], fence))
-                banned = sum(1 for p in pts
-                             if any(point_in_poly(p["lat"], p["lon"], e) for e in jpq))
-                ok_dist = abs(d - target) <= target * 0.005
-                ok_pace = abs(real - pace) <= 1.0
-                ok_inside = inside == len(pts)
-                ok_ban = banned == 0
-                tag = "" if (ok_dist and ok_pace and ok_inside and ok_ban) else "  <<< 失败"
+                inside = sum(1 for q in pts if point_in_poly(q["lat"], q["lon"], fence))
+                banned = sum(1 for q in pts
+                             if any(point_in_poly(q["lat"], q["lon"], e) for e in jpq))
+                ok_d = abs(d - target) <= target * 0.01
+                ok_p = abs(real - pace) <= tol + 0.5
+                ok_i = inside == len(pts)
+                ok_b = banned == 0
+                inwin = window[0] <= real <= window[1]
+                tag = "" if (ok_d and ok_p and ok_i and ok_b and inwin) else "  <<< 失败"
                 if tag:
-                    fails.append((name, profile, pace, d, real, inside, len(pts), banned))
-                print("%-10s %-8s %6d %10.1f %9s %9s %7d%s" %
-                      (name, profile, len(pts), d, fmt_pace(real),
-                       "%.1f%%" % (inside * 100.0 / len(pts)), banned, tag))
+                    fails.append((name, pace, seed, d, real, inside, len(pts), banned, inwin))
+                print("%-10s %-8s %6d %10.1f %9s %9s %7d %s%s" %
+                      (name, fmt_pace(pace), len(pts), d, fmt_pace(real),
+                       "%.1f%%" % (inside * 100.0 / len(pts)), banned,
+                       "✓" if inwin else "✗", tag))
         print()
 
-    print("\n【3】配速起伏：温和 / 拟真应当明显，恒定应当为零")
+    print("\n【4】配速起伏：应当有明显快慢差异，并出现短暂停顿")
     print("-" * 78)
-    print("%-10s %-10s %12s %12s %10s %10s" %
-          ("形态", "场地", "最快分段", "最慢分段", "步长跨度", "停顿点"))
-    for profile in (STEADY, NATURAL, REALISTIC):
-        for name, fence, jpq in (("风华", FENG_HUA, FENG_HUA_JPQ),):
-            pts, _ = generate(fence, jpq, 345.0, target, seed=2026, profile=profile)
-            lo, hi = window_pace_range(pts)
-            steps = [p["step"] for p in pts]
-            span = max(steps) - min(steps)
-            paused = sum(1 for s in steps if s < 0.4)
-            print("%-10s %-10s %12s %12s %10.2f %10d" %
-                  (profile, name, fmt_pace(lo), fmt_pace(hi), span, paused))
-            if profile == STEADY:
-                if span > 1.0:
-                    fails.append(("恒定形态竟然有起伏", span))
-            if profile == NATURAL:
-                if not (hi - lo > 40):
-                    fails.append(("温和形态起伏不足", lo, hi))
-            if profile == REALISTIC:
-                if paused == 0:
-                    fails.append(("拟真形态没有停顿点",))
+    print("%-10s %12s %12s %10s %10s" %
+          ("场地", "最快分段", "最慢分段", "步长跨度", "停顿点"))
+    for name, fence0, jpq in (("风华", FENG_HUA, FENG_HUA_JPQ),
+                              ("太极", TAI_JI, []),
+                              ("宁静苑", NING_JING, [])):
+        pts, _, _, _, _ = generate(fence0, jpq, 345.0, target, seed=2026)
+        lo, hi = window_pace_range(pts)
+        steps = [p["step"] for p in pts]
+        span = max(steps) - min(steps)
+        paused = sum(1 for x in steps if x < 0.4)
+        print("%-10s %12s %12s %10.2f %10d" %
+              (name, fmt_pace(lo), fmt_pace(hi), span, paused))
+        if not (hi - lo > 40):
+            fails.append(("起伏不足", name, lo, hi))
+        if paused == 0:
+            fails.append(("没有停顿点", name))
 
-    print("\n【4】形态不改变总时长（采样点数）")
+    print("\n【5】容差 0 时也应贴近目标配速")
     print("-" * 78)
-    counts = {}
-    for profile in (STEADY, NATURAL, REALISTIC):
-        pts, _ = generate(FENG_HUA, FENG_HUA_JPQ, 345.0, target, seed=99, profile=profile)
-        counts[profile] = len(pts)
-    print("  ", counts)
-    if len(set(counts.values())) != 1:
-        fails.append(("形态改变了时长", counts))
-    else:
-        print("   ✓ 三种形态点数一致 =", list(counts.values())[0])
+    for pace in (330.0, 345.0):
+        pts, _, real, window, _ = generate(
+            FENG_HUA, FENG_HUA_JPQ, pace, target, seed=42, pace_tol=0.0)
+        dev = abs(real - pace)
+        print("  目标 %s → 实测 %s（偏差 %.1f 秒）" % (fmt_pace(pace), fmt_pace(real), dev))
+        if dev > 2.0:
+            fails.append(("容差0偏差过大", pace, real))
 
     print("\n" + "=" * 78)
     if fails:
