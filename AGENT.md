@@ -12,7 +12,7 @@
 | 名称 | 鲸鲸约跑（CampusRun） |
 | 一句话 | 微信小程序「重邮智慧体育」的打卡工具，**安卓单机版** |
 | 作者 | WilliTourt的蓝色大肥鱼 🐟 |
-| 当前版本 | **v1.9.0**（`versionCode 10900` / `versionName "1.9.0"`）—— 由版本分支 `V1.9.0` 推导，规则见 [§5.1](#51-版本号规则semver-20) |
+| 当前版本 | **v1.9.1**（`versionCode 10901` / `versionName "1.9.1"`）—— 由版本分支 `V1.9.1` 推导，规则见 [§5.1](#51-版本号规则semver-20) |
 | License | MIT |
 | 仓库 | https://github.com/gufandf/CQUPT-MockRunning |
 | 目标服务 | `https://sport.cqupt.edu.cn/new_wxapp`（重邮智慧体育小程序后端） |
@@ -52,6 +52,7 @@ CQUPT-MockRunning/
 │   ├── app/src/main/java/com/whale/campusrun/
 │   │   ├── Api.kt            重邮智慧体育 API 客户端（无签名、明文 JSON）
 │   │   ├── App.kt            Application 入口，只负责在任何 Activity 前定好主题
+│   │   ├── AreaStore.kt      场地缓存单例：设置页拉到 → 主页 onResume 直接取用
 │   │   ├── MainActivity.kt   主页，**只放打卡**（openid / 场地 / 配速 / 仪表盘 / 日志）
 │   │   ├── SettingsActivity.kt  设置页：主题 / 统计 / 取码 / 教程 / 说明 / 开源仓库
 │   │   ├── RunController.kt  单例，持有跑步线程，切主题重建 Activity 不丢进度
@@ -60,6 +61,7 @@ CQUPT-MockRunning/
 │   │   └── TrackGen.kt       轨迹生成（纯 JVM 逻辑，可单测）
 │   ├── app/src/main/assets/get_openid.py   随 App 分发的取码脚本（与根目录同源）
 │   └── app/src/test/java/.../TrackGenTest.kt  用服务器真实多边形做断言
+│                              AreaStoreTest.kt 场地缓存的状态机（拉取/失败/换账号）
 ├── get_openid.py             本地提取 openid（读微信 HTTP 缓存，零解密、不联网）
 ├── wecat_run.py              命令行版客户端
 ├── track_engine.py           轨迹引擎 Python 参考实现

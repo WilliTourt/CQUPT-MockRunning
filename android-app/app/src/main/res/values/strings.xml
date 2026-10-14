@@ -92,6 +92,7 @@
     <string name="conn_ok">已连接，回主页选场地即可</string>
     <string name="conn_connecting">连接中…</string>
     <string name="conn_no_area">连上了，但没拉到可用场地，稍后重试</string>
+    <string name="conn_bad_openid">openid 无效或未绑定校园跑身份，换一个再试</string>
     <string name="stats_failed">拉取失败，请检查网络后重试</string>
     <string name="ok">好</string>
 
