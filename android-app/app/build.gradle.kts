@@ -16,7 +16,7 @@ android {
         minSdk = 24
         targetSdk = 34
         // 版本号由版本分支推导，公式与清单见 AGENT.md §5.1 / §5.2
-        // 当前分支 dev-gufandf 的版本分支是 V1.9.0 → MAJOR*10000 + MINOR*100 + PATCH
+        // 版本分支 V1.9.0（tag）→ MAJOR*10000 + MINOR*100 + PATCH = 1*10000 + 9*100 + 0
         versionCode = 10900
         versionName = "1.9.0"
     }

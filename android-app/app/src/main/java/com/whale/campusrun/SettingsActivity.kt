@@ -34,7 +34,7 @@ class SettingsActivity : AppCompatActivity() {
 
     companion object {
         /** 开源仓库。说明信息里也会显示这个地址。 */
-        const val REPO_URL = "https://github.com/gufandf/CQUPT-MockRunning"
+        const val REPO_URL = "https://github.com/WilliTourt/CQUPT-MockRunning"
     }
 
     private lateinit var segAuto: TextView
