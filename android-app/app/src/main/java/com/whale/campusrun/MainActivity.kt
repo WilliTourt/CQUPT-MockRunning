@@ -59,7 +59,19 @@ class MainActivity : AppCompatActivity(), RunListener {
     private lateinit var engine: RunEngine
     private val ui = Handler(Looper.getMainLooper())
 
+    /** 当前绑进下拉框的那份场地，下标要和 adapter 一一对应，不能直接用 AreaStore 的快照。 */
     private var areas: List<Area> = emptyList()
+
+    /** [areas] 对应 AreaStore 的哪个 revision，用来判断要不要重绑。 */
+    private var boundRevision = -1L
+
+    /** 串行化「连接 + 拉场地」，免得自动补拉和点【开始打卡】同时换 token。 */
+    private val fetchLock = Any()
+
+    /** 自动补拉是否在进行中，防止每次 onResume 都起一条线程。 */
+    @Volatile
+    private var autoFetching = false
+
     private var busy = false
 
     private val prefs by lazy { getSharedPreferences("campusrun", MODE_PRIVATE) }
@@ -116,6 +128,9 @@ class MainActivity : AppCompatActivity(), RunListener {
         updateBatteryHint()
         updatePaceWindow()
         askNotificationPermission()
+        // 先给下拉框一个占位项（onResume 里的 syncAreas 会把它换成真场地）。
+        // 不给的话首次启动时 Spinner 没有 adapter，看起来像个坏掉的空框。
+        bindAreas(emptyList(), "")
         restoreOrInit()
     }
 
@@ -140,6 +155,9 @@ class MainActivity : AppCompatActivity(), RunListener {
         super.onResume()
         updateBatteryHint()
         updatePaceWindow()
+        // openid 是在设置页填的，填完回来必须立刻反映到场地下拉框上，
+        // 而不是等用户点了一次【开始打卡】才刷新。见 syncAreas()。
+        syncAreas()
     }
 
     private fun restoreOrInit() {
@@ -147,6 +165,78 @@ class MainActivity : AppCompatActivity(), RunListener {
             RunController.logFromUi("（已重新附着到正在进行的打卡）")
         }
     }
+
+    // ---------------------------------------------------------------- 场地同步
+
+    /**
+     * 把 AreaStore 里的场地同步到主页下拉框，必要时补拉一次。
+     *
+     * 这是「填完 openid 主页不刷新」的正解：设置页那边一填 openid 就写进 prefs、
+     * 拉到场地就发布到 AreaStore，主页 onResume 一比对 revision 就重绑下拉框，
+     * 不需要重打网络，也不需要用户先去点一次【开始打卡】。
+     *
+     * 三种情况：
+     *   ① 换过 openid → 旧场地作废，重新拉（换账号不能还显示别人的场地）
+     *   ② 已有当前 openid 的结果 → 直接绑定
+     *   ③ 还没拉过、也不在失败冷却期、openid 也没被判定无效 → 后台补拉
+     */
+    private fun syncAreas() {
+        val oid = openid()
+
+        // ① 设置页换了 openid：上一份场地属于别人，必须先丢
+        if (AreaStore.publishedOpenid.isNotEmpty() && AreaStore.publishedOpenid != oid) {
+            AreaStore.invalidate()
+            boundRevision = -1L
+        }
+
+        // ② 有现成的就直接绑，不再动网络
+        if (AreaStore.hasResultFor(oid)) {
+            bindIfChanged()
+            return
+        }
+
+        // 之前绑过但现在没数据了（比如换了 openid），先把下拉框清空，别留旧场地
+        if (areas.isNotEmpty()) bindList(emptyList())
+
+        // ③ 没 openid 就没什么可拉的
+        if (oid.isEmpty()) return
+
+        // openid 已确认无效 / 刚失败过 / 正在忙：都不再自动补拉
+        if (AreaStore.isBadOpenid(oid)) return
+        if (AreaStore.inCooldown(oid)) return
+        if (autoFetching || busy || RunController.running) return
+
+        autoFetching = true
+        Thread {
+            try {
+                fetchAreasFor(oid, silent = true)
+            } catch (t: Throwable) {
+                logStack("自动拉取场地", t)
+            } finally {
+                autoFetching = false
+            }
+        }.start()
+    }
+
+    /** revision 变了才重绑。 */
+    private fun bindIfChanged() {
+        if (boundRevision == AreaStore.revision) return
+        bindList(AreaStore.snapshot())
+    }
+
+    /** 无条件把这份场地铺进下拉框，并记住它对应哪个 revision。 */
+    private fun bindList(list: List<Area>) {
+        // 先记下当前选中项，再换 areas —— 换完就读不到旧的了
+        val keep = currentSelection()
+        areas = list
+        bindAreas(list, keep)
+        boundRevision = AreaStore.revision
+    }
+
+    /** 界面上当前选中的场地编号；没绑过场地时退回 prefs 里上次打卡用的那个。 */
+    private fun currentSelection(): String =
+        areas.getOrNull(spArea.selectedItemPosition)?.placeCode
+            ?: prefs.getString("placeCode", "").orEmpty()
 
     // ---------------------------------------------------------------- 配速窗口
 
@@ -181,24 +271,41 @@ class MainActivity : AppCompatActivity(), RunListener {
     /**
      * 连接并拉取场地。必须在后台线程调用；界面更新内部自己 post 到主线程。
      *
+     * 结果会发布到 [AreaStore]，这样主页和设置页共用同一份场地，谁拉都一样。
+     *
+     * @param silent 自动补拉时为 true —— 只更新列表和日志，失败不弹对话框。
+     *   用户没主动点任何按钮，突然弹一个框太打扰；真的开始打卡前还会再拦一次。
      * @return 是否拿到了可用场地
      */
-    private fun connectAndFetch(oid: String): Boolean {
-        if (!engine.connect(oid)) {
-            if (engine.netFail) ui.post { showConnectFailed() }
-            return false
+    private fun fetchAreasFor(oid: String, silent: Boolean): Boolean {
+        // 同一时刻只允许一条「连接 + 拉场地」在跑。本 Activity 只有这一份 engine，
+        // 自动补拉和点【开始打卡】都会走这里；串行化能避免两条线程交替换 token。
+        synchronized(fetchLock) {
+            // 排队等锁的这段时间里，别人（比如自动补拉）可能已经拉好了 —— 那就别重复打网络。
+            if (AreaStore.hasAreasFor(oid)) {
+                ui.post { bindIfChanged() }
+                return true
+            }
+            if (!engine.connect(oid)) {
+                // 换 token 失败分两种，处理方式完全不同：网络问题过一会儿还能重试，
+                // openid 无效则是重试多少次都一样。
+                val netFail = engine.netFail
+                if (netFail) AreaStore.markNetFailed(oid) else AreaStore.markBadOpenid(oid)
+                if (netFail && !silent) ui.post { showConnectFailed() }
+                return false
+            }
+            engine.fetchRule()
+            val list = engine.fetchAreas()
+            if (engine.netFail) {
+                // 失败：留着旧场地（如果还是同一个 openid），只记一笔冷却
+                AreaStore.markNetFailed(oid)
+                if (!silent) ui.post { showConnectFailed() }
+                return false
+            }
+            AreaStore.publish(oid, list)
+            ui.post { bindIfChanged() }
+            return list.isNotEmpty()
         }
-        engine.fetchRule()
-        val list = engine.fetchAreas()
-        ui.post {
-            areas = list
-            bindAreas(list)
-        }
-        if (engine.netFail) {
-            ui.post { showConnectFailed() }
-            return false
-        }
-        return list.isNotEmpty()
     }
 
     /**
@@ -256,14 +363,19 @@ class MainActivity : AppCompatActivity(), RunListener {
         setEnabled(false)
         Thread {
             try {
-                // 还没拉过场地就先拉一次（openid 是在设置页填的）
-                if (areas.isEmpty()) connectAndFetch(oid)
+                // 正常路径上 onResume 的 syncAreas() 已经把场地填好了，这里不会进。
+                // 走到这里说明是"刚填完 openid 就直接点开始"之类的边角情况：
+                // 库里有现成的就用，没有才真的打一次网络。
+                // 用户主动点了按钮，所以这次失败要弹框（silent = false）。
+                if (!AreaStore.hasAreasFor(oid)) fetchAreasFor(oid, silent = false)
             } catch (t: Throwable) {
                 logStack("连接", t)
             } finally {
                 ui.post {
                     busy = false
                     setEnabled(true)
+                    // 先按库里的最新结果重绑一次，保证下拉框和 selectedItemPosition 对齐
+                    bindIfChanged()
                     val area = areas.getOrNull(spArea.selectedItemPosition)
                     if (area == null) {
                         toast(getString(R.string.need_area))
@@ -415,13 +527,20 @@ class MainActivity : AppCompatActivity(), RunListener {
         }
     }
 
-    private fun bindAreas(list: List<Area>) {
-        val names = if (list.isEmpty()) listOf(getString(R.string.need_area)) else list.map { it.toString() }
+    /**
+     * 把场地铺进下拉框，并尽量保住用户已经选中的那个。
+     *
+     * @param keep 想保住的 placeCode。由调用方在替换 [areas] **之前**取好 ——
+     *   否则每次场地刷新（比如从设置页连完回来）都会把用户刚选的场地重置掉。
+     */
+    private fun bindAreas(list: List<Area>, keep: String) {
+        val names = if (list.isEmpty()) listOf(getString(R.string.need_area))
+        else list.map { it.toString() }
         spArea.adapter = ArrayAdapter(
             this, android.R.layout.simple_spinner_dropdown_item, names
         )
-        val lastCode = prefs.getString("placeCode", "")
-        val idx = list.indexOfFirst { it.placeCode == lastCode }
+
+        val idx = list.indexOfFirst { it.placeCode == keep }
         if (idx >= 0) spArea.setSelection(idx)
     }
 
