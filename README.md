@@ -9,7 +9,7 @@
   <img src="docs/img/icon.png" width="200" alt="鲸鲸约跑">
 </p>
 
-**当前版本 v1.10.1** · [**下载 APK**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
+**当前版本 v1.10.1** · [**~~下载 APK~~下载源码**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
 
 ---
 
