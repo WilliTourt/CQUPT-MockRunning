@@ -50,6 +50,16 @@ class TrackGenTest {
         doubleArrayOf(29.532019, 106.610646), doubleArrayOf(29.533979, 106.610558)
     )
 
+    /** T1005 太极运动场 禁跑区（jpq，11 顶点） */
+    private val taiJiJpq = listOf(
+        doubleArrayOf(29.533214, 106.609447), doubleArrayOf(29.533071, 106.609473),
+        doubleArrayOf(29.532917, 106.609468), doubleArrayOf(29.532626, 106.609486),
+        doubleArrayOf(29.532506, 106.609612), doubleArrayOf(29.532533, 106.610029),
+        doubleArrayOf(29.532691, 106.610093), doubleArrayOf(29.533146, 106.610060),
+        doubleArrayOf(29.533421, 106.610058), doubleArrayOf(29.533549, 106.609690),
+        doubleArrayOf(29.533457, 106.609455)
+    )
+
     /** T1014 宁静苑 电子围栏（6 顶点，无禁跑区） */
     private val ningJingFence = listOf(
         doubleArrayOf(29.530657, 106.606709), doubleArrayOf(29.530609, 106.608438),
@@ -75,67 +85,94 @@ class TrackGenTest {
 
     @Test
     fun `风华运动场 各配速都精确命中`() {
-        for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 12345).points
-            val d = measure(pts)
-            val rp = realPace(pts)
-            assertEquals("距离 target=${pace}s/km", 2000.0, d, 2000.0 * 0.005)
-            assertTrue("配速 target=${pace}s/km real=${rp}s/km", Math.abs(rp - pace) <= 1.0)
+        for (burrs in listOf(false, true)) {
+            for (pace in paces) {
+                val pts = TrackGen.generate(
+                    fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 12345, burrs = burrs
+                ).points
+                val d = measure(pts)
+                val rp = realPace(pts)
+                assertEquals("burrs=$burrs 距离 target=${pace}s/km", 2000.0, d, 2000.0 * 0.005)
+                assertTrue("burrs=$burrs 配速 target=${pace}s/km real=${rp}s/km", Math.abs(rp - pace) <= 1.0)
+            }
         }
     }
 
     @Test
     fun `所有点必须落在电子围栏内`() {
-        for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 7).points
-            val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
-            assertEquals("pace=$pace 有点跑到围栏外", pts.size, inside)
+        for (burrs in listOf(false, true)) {
+            for (pace in paces) {
+                val pts = TrackGen.generate(
+                    fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 7, burrs = burrs
+                ).points
+                val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
+                assertEquals("burrs=$burrs pace=$pace 有点跑到围栏外", pts.size, inside)
+            }
         }
     }
 
     @Test
     fun `不能有任何点落在禁跑区`() {
-        for (pace in paces) {
-            val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 99).points
-            val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
-            assertEquals("pace=$pace 有 $banned 个点落在禁跑区，这部分不计里程", 0, banned)
+        for (burrs in listOf(false, true)) {
+            for (pace in paces) {
+                val pts = TrackGen.generate(
+                    fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = 99, burrs = burrs
+                ).points
+                val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
+                assertEquals("burrs=$burrs pace=$pace 有 $banned 个点落在禁跑区，这部分不计里程", 0, banned)
+            }
         }
     }
 
     @Test
     fun `太极运动场与宁静苑同样达标`() {
-        for ((name, fence) in listOf("太极运动场" to taiJiFence, "宁静苑" to ningJingFence)) {
-            for (pace in listOf(330.0, 345.0)) {
-                val pts = TrackGen.generate(fence, emptyList(), pace, 2000.0, seed = 2026).points
-                val rp = realPace(pts)
-                assertTrue("$name pace=$pace", Math.abs(rp - pace) <= 1.0)
-                val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fence) }
-                assertEquals("$name pace=$pace 围栏外有点", pts.size, inside)
+        val fields = listOf(
+            Triple("太极运动场", taiJiFence, listOf(taiJiJpq)),
+            Triple("宁静苑", ningJingFence, emptyList())
+        )
+        for (burrs in listOf(false, true)) {
+            for ((name, fence, jpq) in fields) {
+                for (pace in listOf(330.0, 345.0)) {
+                    val pts = TrackGen.generate(
+                        fence, jpq, pace, 2000.0, seed = 2026, burrs = burrs
+                    ).points
+                    val rp = realPace(pts)
+                    assertTrue("burrs=$burrs $name pace=$pace 配速 ${rp}",
+                        Math.abs(rp - pace) <= 1.0)
+                    val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fence) }
+                    assertEquals("burrs=$burrs $name pace=$pace 围栏外有点", pts.size, inside)
+                    val banned = pts.count { p -> jpq.any { Geo.pointInPoly(p.lat, p.lon, it) } }
+                    assertEquals("burrs=$burrs $name pace=$pace 有 $banned 个点落在禁跑区", 0, banned)
+                }
             }
         }
     }
 
     @Test
     fun `轨迹形态要像人跑的，不是机器画的`() {
-        val pts = TrackGen.generate(fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555).points
+        for (burrs in listOf(false, true)) {
+            val pts = TrackGen.generate(
+                fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555, burrs = burrs
+            ).points
 
-        // 航向不能只有几个固定值（矩形会只有 4 个）
-        val headings = pts.map { Math.round(it.bearing) }.toSet()
-        assertTrue("航向取值只有 ${headings.size} 个，太规则了", headings.size > 40)
+            // 航向不能只有几个固定值（矩形会只有 4 个）
+            val headings = pts.map { Math.round(it.bearing) }.toSet()
+            assertTrue("burrs=$burrs 航向取值只有 ${headings.size} 个，太规则了", headings.size > 40)
 
-        // 速度不能是恒定的
-        val speeds = pts.map { it.speed }
-        val span = speeds.max() - speeds.min()
-        assertTrue("速度波动只有 $span，太假", span > 0.05)
+            // 速度不能是恒定的
+            val speeds = pts.map { it.speed }
+            val span = speeds.max() - speeds.min()
+            assertTrue("burrs=$burrs 速度波动只有 $span，太假", span > 0.05)
 
-        // 逐点间距要有自然抖动
-        val steps = (0 until pts.size - 1).map {
-            Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+            // 逐点间距要有自然抖动
+            val steps = (0 until pts.size - 1).map {
+                Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+            }
+            assertTrue("burrs=$burrs 逐点间距完全没有波动", steps.max() - steps.min() > 0.3)
+
+            // 精度字段要在合理区间
+            assertTrue("burrs=$burrs 精度字段异常", pts.all { it.accuracy in 3.0..20.0 })
         }
-        assertTrue("逐点间距完全没有波动", steps.max() - steps.min() > 0.3)
-
-        // 精度字段要在合理区间
-        assertTrue("精度字段异常", pts.all { it.accuracy in 3.0..20.0 })
     }
 
     @Test
@@ -153,31 +190,108 @@ class TrackGenTest {
     /** 起伏再大，围栏和禁跑区这两条硬约束也不能破。 */
     @Test
     fun `各种配速与种子下都不能越界`() {
-        for (pace in paces) {
-            for (seed in listOf(1, 99, 555, 2026)) {
-                val pts = TrackGen.generate(
-                    fengHuaFence, listOf(fengHuaJpq), pace, 2000.0, seed = seed
-                ).points
-                val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
-                val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
-                assertEquals("pace=$pace seed=$seed 有点跑到围栏外", pts.size, inside)
-                assertEquals("pace=$pace seed=$seed 有 $banned 个点落在禁跑区", 0, banned)
+        for (burrs in listOf(false, true)) {
+            for (pace in paces) {
+                for (seed in listOf(1, 99, 555, 2026)) {
+                    val pts = TrackGen.generate(
+                        fengHuaFence, listOf(fengHuaJpq), pace, 2000.0,
+                        seed = seed, burrs = burrs
+                    ).points
+                    val inside = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaFence) }
+                    val banned = pts.count { Geo.pointInPoly(it.lat, it.lon, fengHuaJpq) }
+                    assertEquals("burrs=$burrs pace=$pace seed=$seed 有点跑到围栏外", pts.size, inside)
+                    assertEquals("burrs=$burrs pace=$pace seed=$seed 有 $banned 个点落在禁跑区", 0, banned)
+                }
             }
         }
+    }
+
+    /**
+     * 路线要有"毛刺 / 突起 / 不规则"，不能只是把椭圆磨圆。
+     *
+     * 用几何量而不是内部参数来断言，这样以后重写噪声模型也依然有效：
+     *   · 逐秒步长里要有一批明显大于均值的跳点（野点尖刺）
+     *   · 最大跳点要到 5m 以上（肉眼在地图上看得出突起）
+     *   · 每秒转向角的均值 / 大角度折返次数要显著高于光滑环线
+     *     （原来那版是 8° 左右、几乎没有一秒内的折返）
+     */
+    @Test
+    fun `路线要有毛刺和突起，不能是光滑椭圆`() {
+        val pts = TrackGen.generate(
+            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555, burrs = true
+        ).points
+
+        val steps = (0 until pts.size - 1).map {
+            Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+        }
+        val meanStep = steps.average()
+        val bigJumps = steps.count { it > meanStep * 1.5 }
+        assertTrue("跳点只有 $bigJumps 个，路线太光滑", bigJumps >= 8)
+        assertTrue("最大跳点 ${"%.2f".format(steps.max())}m，看不出突起", steps.max() > 5.0)
+
+        val turns = (2 until pts.size).map {
+            val a = Geo.bearing(pts[it - 2].lat, pts[it - 2].lon, pts[it - 1].lat, pts[it - 1].lon)
+            val b = Geo.bearing(pts[it - 1].lat, pts[it - 1].lon, pts[it].lat, pts[it].lon)
+            Math.abs((b - a + 540.0) % 360.0 - 180.0)
+        }
+        val meanTurn = turns.average()
+        assertTrue("平均每秒转向 ${"%.1f".format(meanTurn)}°，太平滑", meanTurn > 12.0)
+        assertTrue(
+            "大角度折返只有 ${turns.count { it > 45.0 }} 个",
+            turns.count { it > 45.0 } >= 20
+        )
+    }
+
+    /**
+     * 「轨迹毛刺」开关的行为：
+     *   · 关闭（默认）→ v1.10.1 的光滑轨迹：没有一秒级跳点，最大步长 < 5m
+     *   · 打开 → 跳点显著增多，肉眼能看出突起
+     *   · 两种模式的坐标必须真的不同，不能只是同一个轨迹换个标注
+     */
+    @Test
+    fun `关闭毛刺走光滑轨迹，开启后才有突起`() {
+        val smooth = TrackGen.generate(
+            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555
+        ).points
+        val burr = TrackGen.generate(
+            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 555, burrs = true
+        ).points
+
+        fun steps(pts: List<TrackPoint>) = (0 until pts.size - 1).map {
+            Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+        }
+        val smoothSteps = steps(smooth)
+        val burrSteps = steps(burr)
+        // 用"5m 以上的一秒级跳点"作为毛刺的判据：
+        // 光滑轨迹靠配速起伏也可能超过 1.5× 均值，但不该出现 5m 的尖刺。
+        val smoothOver5 = smoothSteps.count { it > 5.0 }
+        val burrOver5 = burrSteps.count { it > 5.0 }
+
+        assertTrue("关闭毛刺后仍有 $smoothOver5 个 5m+ 跳点", smoothOver5 == 0)
+        assertTrue("关闭毛刺后最大步长 ${"%.2f".format(smoothSteps.max())}m，不够光滑",
+            smoothSteps.max() < 5.0)
+        assertTrue("开启毛刺后 5m+ 跳点只有 $burrOver5 个（关闭时 $smoothOver5）", burrOver5 >= 8)
+
+        val same = smooth.indices.all {
+            smooth[it].lat == burr[it].lat && smooth[it].lon == burr[it].lon
+        }
+        assertTrue("开关切换后轨迹没有变化", !same)
     }
 
     /** 温和起伏：逐秒步长必须有明显快慢差异，且出现短暂停顿。 */
     @Test
     fun `温和起伏既要有快慢差异也要有停顿`() {
-        val pts = TrackGen.generate(
-            fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 777
-        ).points
-        val steps = (0 until pts.size - 1).map {
-            Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+        for (burrs in listOf(false, true)) {
+            val pts = TrackGen.generate(
+                fengHuaFence, listOf(fengHuaJpq), 345.0, 2000.0, seed = 777, burrs = burrs
+            ).points
+            val steps = (0 until pts.size - 1).map {
+                Geo.hav(pts[it].lat, pts[it].lon, pts[it + 1].lat, pts[it + 1].lon)
+            }
+            val span = steps.max() - steps.min()
+            assertTrue("burrs=$burrs 步长跨度只有 $span，起伏太平", span > 1.0)
+            assertTrue("burrs=$burrs 没有任何停顿点，不像真人", steps.count { it < 0.4 } > 0)
         }
-        val span = steps.max() - steps.min()
-        assertTrue("步长跨度只有 $span，起伏太平", span > 1.0)
-        assertTrue("没有任何停顿点，不像真人", steps.count { it < 0.4 } > 0)
     }
 
     /** 配速窗口的计算。 */

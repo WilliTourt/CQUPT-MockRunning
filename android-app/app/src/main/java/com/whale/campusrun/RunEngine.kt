@@ -320,7 +320,8 @@ class RunEngine(private val api: Api, private val l: RunListener) {
         noise: Double,
         seed: Int,
         paceToleranceSec: Double = TrackGen.DEFAULT_PACE_TOLERANCE_SEC,
-        validate: Boolean = true
+        validate: Boolean = true,
+        burrs: Boolean = false
     ) {
         cancel = false
         var state = RunState(phase = "初始化", paceSecKm = paceSecKm, metersTotal = targetM)
@@ -351,9 +352,11 @@ class RunEngine(private val api: Api, private val l: RunListener) {
             targetM = targetM,
             noise = noise,
             seed = seed,
-            paceToleranceSec = paceToleranceSec
+            paceToleranceSec = paceToleranceSec,
+            burrs = burrs
         )
         val track = res.points
+        l.log("   轨迹模式：" + if (burrs) "毛刺 / 突起 开启" else "光滑（毛刺关闭）")
         l.log("   ${TrackGen.summarize(track)}  (耗时 ${System.currentTimeMillis() - t0} ms)")
 
         // 平均配速是否落在「目标 ± 容差」内

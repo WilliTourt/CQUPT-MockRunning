@@ -51,6 +51,10 @@
     <string name="pace_window_bad">配速或抖动格式不对</string>
     <string name="log_hint_short">日志已移到右上角【日志】页。</string>
 
+    <!-- 轨迹毛刺 -->
+    <string name="l_burrs">轨迹毛刺</string>
+    <string name="burrs_hint">开启后加入毛刺 / 突起，更像真人跑出来的；默认关闭为光滑轨迹。</string>
+
     <!-- 仪表盘 -->
     <string name="dash_progress">进度</string>
     <string name="dash_idle_distance">已跑 0.00 / 0.00 km</string>
@@ -84,7 +88,7 @@
 
     <!-- 说明信息 -->
     <string name="about_title">说明</string>
-    <string name="about_body">安卓单机版打卡工具。不申请定位权限、不连第三方服务器、不需要登录。\n\n● 原理：逆向发现小程序是纯客户端信任架构 —— 轨迹点由客户端直接 POST，服务端不回采、无签名、无加密。所以本工具直接在本地构造 HTTP 请求，完全不需要碰手机定位。\n● 隐私：openid 只存在本机，不会上传到任何地方。\n● 人脸：服务端会做人脸判定，而人脸比对在操场的物理摄像头上完成，小程序根本不调相机 —— 这一关只能靠你本人到场，工具绕不过去。\n● 轨迹：配速取规则区间中段，所有点都验证落在场地围栏内并绕开禁跑区，叠了模拟真实 GPS 的低频漂移噪声。\n\n本项目仅供个人学习与安全研究。使用者需自行承担一切后果。</string>
+    <string name="about_body">安卓单机版打卡工具。不申请定位权限、不连第三方服务器、不需要登录。\n\n● 原理：逆向发现小程序是纯客户端信任架构 —— 轨迹点由客户端直接 POST，服务端不回采、无签名、无加密。所以本工具直接在本地构造 HTTP 请求，完全不需要碰手机定位。\n● 隐私：openid 只存在本机，不会上传到任何地方。\n● 人脸：服务端会做人脸判定，而人脸比对在操场的物理摄像头上完成，小程序根本不调相机 —— 这一关只能靠你本人到场，工具绕不过去。\n● 轨迹：配速取规则区间中段，所有点都验证落在场地围栏内并绕开禁跑区。「轨迹毛刺」开关默认关闭（光滑轨迹），打开后叠多尺度 GPS 噪声和稀疏野点，看起来更像真人跑出来的。\n\n本项目仅供个人学习与安全研究。使用者需自行承担一切后果。</string>
     <string name="repo_link">开源仓库（点一下在浏览器里打开）：\nhttps://github.com/WilliTourt/CQUPT-MockRunning</string>
     <string name="b_copy_repo">复制仓库地址</string>
     <string name="repo_copied">仓库地址已复制</string>

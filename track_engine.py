@@ -13,6 +13,7 @@ CampusRun 轨迹引擎  (campusrun/track_engine.py)
     * 严格配速控制（米/秒 与 分'秒"/km 双向换算）
     * 路径按弧长重采样，逐秒出点，点间距 == 配速 × 1s
     * 相关噪声模型 AR(1)：模拟真实 GPS 的低频漂移，而不是白噪声抖动
+    * 可选毛刺/突起（--burrs）：默认关闭，和 App 的「轨迹毛刺」开关一致
     * 速度/航向平滑，避免出现瞬时跳变被"合理性算法"抓到
     * WGS84 <-> GCJ02 双向转换（微信 wx.getLocation 默认 gcj02）
     * 输出 JSON（注入层用）与 GPX（iOS 回放用）
@@ -152,24 +153,43 @@ def poly_loop(waypoints: list[tuple[float, float]]) -> list[tuple[float, float]]
     return list(waypoints)
 
 
-def organic_loop(waypoints: list[tuple[float, float]],
-                 seed: int = 20240101,
-                 seg_m: float = 15.0,
-                 wobble_m: float = 4.0) -> list[tuple[float, float]]:
-    """把规则折线变成"人跑出来"的闭合环线。
+def _is_valid(lat: float, lon: float, fence, excludes) -> bool:
+    if fence and not point_in_poly(lat, lon, fence):
+        return False
+    for e in excludes or ():
+        if point_in_poly(lat, lon, e):
+            return False
+    return True
 
-    真实跑步不会沿标准矩形、更不会在角上做 90° 急转。这里做两件事：
-      1. 低频正弦横向扰动（周期为整圈，保证闭合），模拟贴边、绕障碍、抄近道
-      2. 循环滑动平均，把直角磨圆
-    产出的航向是连续变化的，不会被"航向只有四个值"这类规则筛出来。
-    """
-    dense = densify(waypoints, seg_m)[:-1]        # 去掉重复的闭合点
+
+def _pull_toward(base, p, fence, excludes):
+    """沿 base → p 二分回缩，只削扰动、不动基准环。"""
+    if not _is_valid(base[0], base[1], fence, excludes):
+        return p
+    lo, hi = 0.0, 1.0
+    for _ in range(22):
+        mid = (lo + hi) / 2.0
+        if _is_valid(base[0] + (p[0] - base[0]) * mid,
+                     base[1] + (p[1] - base[1]) * mid, fence, excludes):
+            lo = mid
+        else:
+            hi = mid
+    t = max(0.0, min(1.0, lo * 0.99))
+    return (base[0] + (p[0] - base[0]) * t, base[1] + (p[1] - base[1]) * t)
+
+
+def organic_loop_smooth(waypoints: list[tuple[float, float]],
+                       seed: int = 20240101,
+                       seg_m: float = 15.0,
+                       wobble_m: float = 4.0) -> list[tuple[float, float]]:
+    """v1.10.1 的光滑环线：两条整数圈正弦 + 两轮磨角。"""
+    dense = densify(waypoints, seg_m)[:-1]
     n = len(dense)
     if n < 8:
         return list(waypoints)
 
     rnd = random.Random(seed)
-    k1, k2 = 2, 3                                  # 整数 => 整圈周期 => 自动闭合
+    k1, k2 = 2, 3
     p1, p2 = rnd.uniform(0, math.tau), rnd.uniform(0, math.tau)
     a1, a2 = wobble_m * rnd.uniform(0.5, 1.0), wobble_m * rnd.uniform(0.3, 0.7)
 
@@ -180,7 +200,6 @@ def organic_loop(waypoints: list[tuple[float, float]],
         off = a1 * math.sin(k1 * u + p1) + a2 * math.sin(k2 * u + p2)
         perturbed.append(offset_point(pt, off, (hdg + 90.0) % 360.0))
 
-    # 循环滑动平均，磨圆直角
     for _ in range(2):
         w = 3
         perturbed = [
@@ -188,8 +207,208 @@ def organic_loop(waypoints: list[tuple[float, float]],
              sum(perturbed[(i + k) % n][1] for k in range(-w, w + 1)) / (2 * w + 1))
             for i in range(n)
         ]
-
     return perturbed
+
+
+def organic_loop(waypoints: list[tuple[float, float]],
+                 seed: int = 20240101,
+                 seg_m: float = 7.0,
+                 wobble_m: float = 4.5,
+                 fence=None,
+                 excludes=()) -> list[tuple[float, float]]:
+    """把规则折线变成"人跑出来"的闭合环线。
+
+    和 App 里的 TrackGen.organic 同构：
+      1. 六条整数圈正弦（k=2/3/5/7/11/17），整数圈保证闭合，高频项揉出小波浪
+      2. 3~5 处局部鼓包（宽度 10~38m、幅度 ±2~6m），模拟贴内道 / 绕人 / 抄近道
+      3. 一轮循环滑动平均，只磨掉最尖的折角
+      4. 给了围栏时，把顶出去的点沿"基准点 → 扰动点"收回来
+    """
+    dense = densify(waypoints, seg_m)[:-1]        # 去掉重复的闭合点
+    n = len(dense)
+    if n < 16:
+        return list(waypoints)
+
+    per = 0.0
+    for i in range(n):
+        per += haversine(dense[i], dense[(i + 1) % n])
+    step_m = max(1.0, per / n)
+
+    s = 20240101 if seed is None else seed
+    rnd = random.Random(s * 1000003 + 97)
+
+    harmonic = (2, 3, 5, 7, 11, 17)
+    weight = (0.46, 0.34, 0.24, 0.17, 0.12, 0.07)
+    phase = [rnd.uniform(0, math.tau) for _ in harmonic]
+    wave_amp = [wobble_m * weight[i] * rnd.uniform(0.55, 1.25)
+                for i in range(len(harmonic))]
+
+    bumps = []
+    for _ in range(3 + rnd.randint(0, 2)):
+        center = rnd.uniform(0.0, n)
+        width_m = rnd.uniform(10.0, 38.0)
+        strength = rnd.uniform(2.0, 6.2) * (1 if rnd.random() < 0.5 else -1)
+        bumps.append((center, max(1.0, width_m / step_m), strength))
+
+    perturbed = []
+    for i, pt in enumerate(dense):
+        hdg = bearing(dense[(i - 1) % n], dense[(i + 1) % n])
+        u = i / n * math.tau
+        off = sum(wave_amp[k] * math.sin(harmonic[k] * u + phase[k])
+                  for k in range(len(harmonic)))
+        for center, width, strength in bumps:
+            di = abs(i - center)
+            di = min(di, n - di)
+            off += strength * math.exp(-0.5 * (di / width) ** 2)
+        perturbed.append(offset_point(pt, off, (hdg + 90.0) % 360.0))
+
+    # 只磨一遍、窗口 2：再磨就回到"光滑椭圆"了
+    w = 2
+    smoothed = []
+    for i in range(n):
+        smoothed.append((
+            sum(perturbed[(i + k) % n][0] for k in range(-w, w + 1)) / (2 * w + 1),
+            sum(perturbed[(i + k) % n][1] for k in range(-w, w + 1)) / (2 * w + 1),
+        ))
+
+    if fence:
+        smoothed = [
+            p if _is_valid(p[0], p[1], fence, excludes)
+            else _pull_toward(dense[i], p, fence, excludes)
+            for i, p in enumerate(smoothed)
+        ]
+    return smoothed
+
+
+def _bad_points(poly, fence, excludes) -> int:
+    bad = 0
+    for i in range(len(poly)):
+        a, b = poly[i], poly[(i + 1) % len(poly)]
+        d = haversine(a, b)
+        k = max(1, int(math.ceil(d / 7.0)))
+        for j in range(k):
+            t = j / k
+            if not _is_valid(a[0] + (b[0] - a[0]) * t,
+                             a[1] + (b[1] - a[1]) * t, fence, excludes):
+                bad += 1
+    return bad
+
+
+def _choose_ring(fence, excludes, seed, wobble_m=4.5):
+    """挑第一个完全合法的内缩环；全都非法时退回违例最少的一档。"""
+    fallback, fallback_bad = None, 10 ** 9
+    for f in (0.90, 0.88, 0.86, 0.84, 0.81, 0.77, 0.72, 0.66, 0.59, 0.51):
+        raw = inset_poly(fence, f)
+        bad = _bad_points(raw, fence, excludes)
+        if bad < fallback_bad:
+            fallback, fallback_bad = raw, bad
+        if bad == 0:
+            return organic_loop(raw, seed, 7.0, wobble_m, fence, excludes), f
+    return organic_loop(fallback, seed, 7.0, wobble_m, fence, excludes), 0.0
+
+
+NOISE_RHO = (0.997, 0.970, 0.850, 0.550)
+NOISE_SIGMA = (0.50, 0.27, 0.27, 0.33)
+
+
+def _make_spurs(n: int, seed: int, intensity: float = 1.0):
+    """对应 TrackGen.makeSpurs：大跳 / 绕行包 / 硬毛刺 / 小毛刺四档。"""
+    lateral = [0.0] * n
+    forward = [0.0] * n
+    if n < 80:
+        return lateral, forward
+
+    rnd = random.Random(seed * 1000003 + 77)
+    used: list[int] = []
+
+    def free(at: int, gap: int) -> bool:
+        return all(abs(at - u) >= gap for u in used)
+
+    lo = max(2, int(n * 0.04))
+    hi = min(n - 4, int(n * 0.96))
+
+    for _ in range(max(1, n // 450)):
+        for _try in range(60):
+            at = rnd.randrange(lo, hi)
+            if not free(at, 14):
+                continue
+            used.append(at)
+            a = rnd.uniform(9.0, 16.0) * intensity * (1 if rnd.random() < 0.5 else -1)
+            lateral[at] = a
+            forward[at] = a * rnd.uniform(-0.25, 0.25)
+            break
+
+    for _ in range(max(2, n // 230)):
+        for _try in range(80):
+            at = rnd.randrange(lo, hi)
+            span = rnd.randint(4, 9)
+            if at + span >= n or not free(at, span + 10):
+                continue
+            used.append(at)
+            a = rnd.uniform(5.0, 11.0) * intensity * (1 if rnd.random() < 0.5 else -1)
+            share = rnd.uniform(-0.25, 0.25)
+            for k in range(span + 1):
+                sv = k / span
+                lateral[at + k] = a * math.sin(math.pi * sv)
+                forward[at + k] = a * share * math.sin(math.tau * sv)
+            break
+
+    for _ in range(max(4, n // 75)):
+        for _try in range(80):
+            at = rnd.randrange(lo, hi)
+            if not free(at, 8):
+                continue
+            used.append(at)
+            a = rnd.uniform(3.0, 8.0) * intensity
+            sign = 1.0 if rnd.random() < 0.5 else -1.0
+            share = rnd.uniform(-0.35, 0.35)
+            shape = rnd.random()
+            if shape < 0.45:
+                lateral[at] = a * sign
+                forward[at] = a * share
+            elif shape < 0.72:
+                lateral[at] = a * sign
+                forward[at] = a * share
+                lateral[at + 1] = (-a * 0.55 * sign if rnd.random() < 0.5
+                                   else a * 0.3 * sign)
+            else:
+                span = rnd.randint(2, 4)
+                peak = rnd.randint(1, span - 1)
+                for k in range(span + 1):
+                    denom = max(1.0, float(peak if k <= peak else span - peak))
+                    frac = max(0.0, 1.0 - abs(k - peak) / denom)
+                    lateral[at + k] = a * 1.2 * sign * frac
+            break
+
+    for _ in range(max(6, n // 17)):
+        for _try in range(60):
+            at = rnd.randrange(2, n - 2)
+            if not free(at, 4):
+                continue
+            used.append(at)
+            a = rnd.uniform(0.8, 2.6) * intensity * (1 if rnd.random() < 0.5 else -1)
+            lateral[at] = a
+            forward[at] = rnd.uniform(-0.5, 0.5) * a * 0.4
+            break
+    return lateral, forward
+
+
+def _tolerate(base, q, fence, excludes):
+    """对应 TrackGen.tolerate：沿 base → q 回缩，保住毛刺方向。"""
+    if _is_valid(q[0], q[1], fence, excludes):
+        return q
+    if not _is_valid(base[0], base[1], fence, excludes):
+        return q
+    lo, hi = 0.0, 1.0
+    for _ in range(22):
+        mid = (lo + hi) / 2.0
+        if _is_valid(base[0] + (q[0] - base[0]) * mid,
+                     base[1] + (q[1] - base[1]) * mid, fence, excludes):
+            lo = mid
+        else:
+            hi = mid
+    t = max(0.0, min(1.0, lo * 0.99))
+    return (base[0] + (q[0] - base[0]) * t, base[1] + (q[1] - base[1]) * t)
 
 
 # 三个跑步区域 —— 坐标为占位值，替换成学校实际允许区域内的闭环即可
@@ -283,12 +502,109 @@ def inset_poly(poly, f: float):
 
 def build_track_poly(fence, excludes, pace_s_per_km, target_m,
                      sample_dt=1.0, noise_sigma=0.6, seed=20261013,
-                     altitude=DEFAULT_ALTITUDE, start=None):
+                     altitude=DEFAULT_ALTITUDE, start=None, burrs=False):
     """基于服务器下发的真实电子围栏 + 禁跑区生成轨迹。
 
     fence    : [[lat, lon], ...]   dzwl 电子围栏
     excludes : [[[lat, lon], ...]] jpq 禁跑区，轨迹要避开
+    burrs    : 是否叠加毛刺 / 突起；False = v1.10.1 光滑轨迹（和 App 默认一致）
     返回 (points, stats)
+    """
+    if not burrs:
+        return build_track_poly_smooth(
+            fence, excludes, pace_s_per_km, target_m, sample_dt, noise_sigma,
+            seed, altitude, start)
+
+    fence = dedupe(fence)
+    excludes = [dedupe(e) for e in (excludes or []) if len(e) >= 3]
+    if start is None:
+        start = datetime.now(timezone.utc)
+
+    nom = 1000.0 / pace_s_per_km
+    n = max(2, int(round(target_m / (nom * sample_dt))))
+    ring, inset_f = _choose_ring(fence, excludes, seed)
+    dense = densify(ring, 1.0)
+    cum = cumulative(dense)
+    spur_lat, spur_fwd = _make_spurs(n, seed, min(2.5, max(0.0, noise_sigma / 0.6)))
+
+    def emit(step):
+        rnd = random.Random(seed)
+        rnd_acc = random.Random(seed * 31 + 7)
+        perr = [0.0] * len(NOISE_RHO)
+        aerr = [0.0] * len(NOISE_RHO)
+        latl = [0.0] * n
+        lonl = [0.0] * n
+        pew = [0.0] * n
+        for i in range(n):
+            p, hdg = point_at(dense, cum, i * step * sample_dt)
+            perr_t, aerr_t = spur_lat[i], spur_fwd[i]
+            for c in range(len(NOISE_RHO)):
+                perr[c] = (NOISE_RHO[c] * perr[c]
+                           + rnd.gauss(0.0, 1.0) * noise_sigma * NOISE_SIGMA[c])
+                aerr[c] = (NOISE_RHO[c] * aerr[c]
+                           + rnd.gauss(0.0, 1.0) * noise_sigma * NOISE_SIGMA[c])
+                perr_t += perr[c]
+                aerr_t += aerr[c] * 0.45
+            o1 = offset_point(p, perr_t, (hdg + 90.0) % 360.0)
+            q = offset_point(o1, aerr_t, hdg)
+            latl[i], lonl[i] = _tolerate(p, q, fence, excludes)
+            pew[i] = perr_t
+
+        out = []
+        for i in range(n):
+            j = i + 1 if i < n - 1 else i - 1
+            seg = haversine((latl[i], lonl[i]), (latl[j], lonl[j]))
+            brg = (bearing((latl[i], lonl[i]), (latl[j], lonl[j]))
+                   if i < n - 1 else bearing((latl[j], lonl[j]), (latl[i], lonl[i])))
+            acc = 4.5 + abs(pew[i]) * 0.30 + rnd_acc.uniform(-1.0, 2.2)
+            out.append({
+                "t": (start + timedelta(seconds=i * sample_dt)).timestamp(),
+                "lat": latl[i], "lon": lonl[i],
+                "speed": round(seg / sample_dt, 2),
+                "bearing": round(brg, 1),
+                "accuracy": round(max(3.0, min(18.0, acc)), 1),
+                "altitude": round(altitude + rnd.uniform(-2.0, 2.0), 1),
+            })
+        return out
+
+    def measure(pts):
+        return sum(haversine((a["lat"], a["lon"]), (b["lat"], b["lon"]))
+                   for a, b in zip(pts, pts[1:]))
+
+    if measure(emit(0.0)) < target_m:
+        lo, hi = 0.0, nom
+        for _ in range(24):
+            if measure(emit(hi)) >= target_m:
+                break
+            hi *= 1.5
+        for _ in range(48):
+            mid = (lo + hi) / 2
+            if measure(emit(mid)) < target_m:
+                lo = mid
+            else:
+                hi = mid
+        pts = emit((lo + hi) / 2)
+    else:
+        pts = emit(0.0)
+
+    stats = {
+        "n": len(pts),
+        "distance": round(measure(pts), 1),
+        "inside": sum(1 for p in pts if point_in_poly(p["lat"], p["lon"], fence)),
+        "banned": sum(1 for p in pts
+                      if any(point_in_poly(p["lat"], p["lon"], e) for e in excludes)),
+        "inset": inset_f,
+        "duration": int(round((len(pts) - 1) * sample_dt)),
+    }
+    return pts, stats
+
+
+def build_track_poly_smooth(fence, excludes, pace_s_per_km, target_m,
+                            sample_dt=1.0, noise_sigma=0.6, seed=20261013,
+                            altitude=DEFAULT_ALTITUDE, start=None):
+    """v1.10.1 的光滑轨迹：单个 AR(1) 噪声，逐档挑内缩系数。
+
+    和 App 里「轨迹毛刺」关闭时的 TrackGen.generateSmooth 对应。
     """
     fence = dedupe(fence)
     excludes = [dedupe(e) for e in (excludes or []) if len(e) >= 3]
@@ -312,10 +628,11 @@ def build_track_poly(fence, excludes, pace_s_per_km, target_m,
             sm = 0.75 * sm + 0.25 * (nom * (1 + rnd.uniform(-0.03, 0.03)))
             out.append({
                 "t": (start + timedelta(seconds=i * sample_dt)).timestamp(),
-                "lat": round(lat, 7), "lon": round(lon, 7),
+                "lat": lat, "lon": lon,
                 "speed": round(sm, 2),
                 "bearing": round((hdg + rnd.gauss(0, 1.6)) % 360.0, 1),
-                "accuracy": round(max(4.0, 5.0 + abs(perr) * 0.5 + rnd.uniform(-1, 2)), 1),
+                "accuracy": round(max(4.0, 5.0 + abs(perr) * 0.5
+                                      + rnd.uniform(-1, 2)), 1),
                 "altitude": round(altitude + rnd.uniform(-2, 2), 1),
             })
         return out
@@ -327,9 +644,10 @@ def build_track_poly(fence, excludes, pace_s_per_km, target_m,
     best, best_score, best_f = None, -1.0, None
     for f in (0.90, 0.85, 0.80, 0.74, 0.66, 0.58, 0.50):
         ring = inset_poly(fence, f)
-        dense = densify(organic_loop(ring, seed=seed,
-                                     seg_m=max(6.0, _perim(ring) / 64.0),
-                                     wobble_m=3.0), 1.0)
+        ring_len = sum(haversine(ring[i], ring[(i + 1) % len(ring)])
+                       for i in range(len(ring)))
+        dense = densify(organic_loop_smooth(
+            ring, seed=seed, seg_m=max(6.0, ring_len / 64.0), wobble_m=3.0), 1.0)
         cum = cumulative(dense)
 
         pts = emit(nom * sample_dt)
@@ -363,13 +681,9 @@ def build_track_poly(fence, excludes, pace_s_per_km, target_m,
         "banned": sum(1 for p in best
                       if any(point_in_poly(p["lat"], p["lon"], e) for e in excludes)),
         "inset": best_f,
-        "duration": len(best) - 1,
+        "duration": int(round((len(best) - 1) * sample_dt)),
     }
     return best, stats
-
-
-def _perim(poly):
-    return sum(haversine(poly[i], poly[(i + 1) % len(poly)]) for i in range(len(poly)))
 
 
 # ---------------------------------------------------------------- 轨迹生成
@@ -404,58 +718,89 @@ def build_track(route: str,
                 drift_rho: float = 0.90,
                 crs: str = "gcj02",
                 seed: int | None = 20240101,
-                altitude: float = DEFAULT_ALTITUDE) -> list[TrackPoint]:
-    """生成一条轨迹。"""
+                altitude: float = DEFAULT_ALTITUDE,
+                burrs: bool = False) -> list[TrackPoint]:
+    """生成一条轨迹（静态区域，主要用于 iOS / GPX 回放与 CLI 自测）。
+
+    burrs=False（默认）：v1.10.1 的光滑轨迹；True：多尺度噪声 + 毛刺 / 突起。
+    """
+    # seed=None 时只摇一次，后面所有噪声共用它；否则每次 emit 的噪声都不同，
+    # 二分的 measure(step) 就不确定了。
+    s = seed if seed is not None else random.randrange(1, 1 << 30)
+
     # 有机化：把规则折线磨成"人跑出来"的环线，采样点够密才磨得动
     _wp = ROUTES[route]["waypoints"]
-    _len = sum(haversine(a, b) for a, b in zip(_wp + [_wp[0]], _wp[1:] + [_wp[0]]))
-    wp = organic_loop(_wp, seed=seed if seed is not None else 20240101,
-                      seg_m=max(6.0, _len / 64.0), wobble_m=4.0)
+    if burrs:
+        wp = organic_loop(_wp, seed=s, seg_m=7.0, wobble_m=4.5)
+    else:
+        _len = sum(haversine(a, b) for a, b in zip(_wp + [_wp[0]], _wp[1:] + [_wp[0]]))
+        wp = organic_loop_smooth(_wp, seed=s, seg_m=max(6.0, _len / 64.0), wobble_m=4.0)
 
-    dense = densify(wp, 0.5)
+    dense = densify(wp, 1.0)
     cum = cumulative(dense)
 
     nom_speed = 1000.0 / pace_s_per_km             # m/s，理想地面速度
 
     # 采样点数由"配速 × 距离"锁死：时长固定，速度才是待求量
     n = max(2, int(round(target_m / (nom_speed * sample_dt))))
+    spur_lat, spur_fwd = _make_spurs(
+        n, s, min(2.5, max(0.0, noise_sigma / 0.6)))
 
     def emit(step_m: float) -> list[TrackPoint]:
-        """固定点数 n，按给定地面步长铺点，再叠加相关噪声。
+        """固定点数 n，按给定地面步长铺点，再叠加多尺度噪声与野点。
 
-        同一个 seed 每次都重现同一噪声实现，因此 measure 是关于 step_m 的
-        确定性单调递增函数，可以直接二分。
+        同一个 seed 每次都重现同一噪声实现，因此 measure 关于 step_m 近似单调，
+        可以直接二分。
         """
-        rnd = random.Random(seed)
-
-        perr = 0.0
-        aerr = 0.0
-        sm_speed = nom_speed
-        out: list[TrackPoint] = []
+        rnd = random.Random(s)
+        rnd_acc = random.Random(s * 31 + 7)
+        if burrs:
+            perr = [0.0] * len(NOISE_RHO)
+            aerr = [0.0] * len(NOISE_RHO)
+        else:
+            perr, aerr = [0.0], [0.0]
+        lat = [0.0] * n
+        lon = [0.0] * n
+        pew = [0.0] * n
 
         for i in range(n):
             p, hdg = point_at(dense, cum, i * step_m)
+            if burrs:
+                perr_t, aerr_t = spur_lat[i], spur_fwd[i]
+                for c in range(len(NOISE_RHO)):
+                    perr[c] = (NOISE_RHO[c] * perr[c]
+                               + rnd.gauss(0.0, 1.0) * noise_sigma * NOISE_SIGMA[c])
+                    aerr[c] = (NOISE_RHO[c] * aerr[c]
+                               + rnd.gauss(0.0, 1.0) * noise_sigma * NOISE_SIGMA[c])
+                    perr_t += perr[c]
+                    aerr_t += aerr[c] * 0.45
+            else:
+                perr[0] = (drift_rho * perr[0]
+                           + rnd.gauss(0.0, 1.0) * noise_sigma * 0.55)
+                aerr[0] = (drift_rho * aerr[0]
+                           + rnd.gauss(0.0, 1.0) * noise_sigma * 0.35)
+                perr_t, aerr_t = perr[0], aerr[0]
+            o1 = offset_point(p, perr_t, (hdg + 90.0) % 360.0)
+            o2 = offset_point(o1, aerr_t, hdg)
+            lat[i], lon[i] = o2
+            pew[i] = perr_t
 
-            perr = drift_rho * perr + rnd.gauss(0.0, noise_sigma * 0.55)
-            aerr = drift_rho * aerr + rnd.gauss(0.0, noise_sigma * 0.35)
-
-            # 垂直航向做横向偏移，沿航向做纵向偏移
-            lat0, lon0 = offset_point(p, perr, (hdg + 90.0) % 360.0)
-            lat0, lon0 = offset_point((lat0, lon0), aerr, hdg)
-
-            # 报告速度：真实速度上做低通，避免恒定值
-            sm_speed = 0.75 * sm_speed + 0.25 * (nom_speed * (1.0 + rnd.uniform(-0.03, 0.03)))
-
+        out: list[TrackPoint] = []
+        for i in range(n):
+            j = i + 1 if i < n - 1 else i - 1
+            seg = haversine((lat[i], lon[i]), (lat[j], lon[j]))
+            brg = (bearing((lat[i], lon[i]), (lat[j], lon[j])) if i < n - 1
+                   else bearing((lat[j], lon[j]), (lat[i], lon[i])))
+            acc = 4.5 + abs(pew[i]) * 0.30 + rnd_acc.uniform(-1.0, 2.2)
             t = start + timedelta(seconds=i * sample_dt)
-            glat, glon = transform((lat0, lon0), crs)
-
+            glat, glon = transform((lat[i], lon[i]), crs)
             out.append(TrackPoint(
                 t=round(t.timestamp(), 3),
-                lat=round(glat, 7),
-                lon=round(glon, 7),
-                speed=round(sm_speed, 2),
-                bearing=round((hdg + rnd.gauss(0.0, 1.6)) % 360.0, 1),
-                accuracy=round(max(3.0, 5.0 + abs(perr) * 0.5 + rnd.uniform(-1.0, 2.0)), 1),
+                lat=glat,
+                lon=glon,
+                speed=round(seg / sample_dt, 2),
+                bearing=round(brg, 1),
+                accuracy=round(max(3.0, min(18.0, acc)), 1),
                 altitude=round(altitude + rnd.uniform(-2.0, 2.0), 1),
             ))
         return out
@@ -479,13 +824,12 @@ def build_track(route: str,
             break
         hi *= 1.5
 
-    for _ in range(32):
+    for _ in range(40):
         mid = (lo + hi) / 2.0
         if measure(emit(mid)) < target_m:
             lo = mid
         else:
             hi = mid
-
     return emit((lo + hi) / 2.0)
 
 
@@ -547,7 +891,8 @@ def cmd_gen(args) -> int:
 
     pts = build_track(args.route, pace, args.dist * 1000.0, start,
                       sample_dt=args.dt, noise_sigma=args.noise,
-                      crs=args.crs, seed=args.seed)
+                      crs=args.crs, seed=args.seed, burrs=args.burrs)
+    print(f"[i] 轨迹模式：{'毛刺 / 突起' if args.burrs else '光滑（毛刺关闭）'}")
 
     for p in (args.out, args.gpx):
         if p:
@@ -585,6 +930,8 @@ def main(argv: list[str] | None = None) -> int:
                        help="GPS 逐秒抖动强度；0.6 约等于真实手机在开阔地经滤波后的表现")
     p_gen.add_argument("--crs", default="gcj02", choices=["wgs84", "gcj02"])
     p_gen.add_argument("--seed", type=int, default=20240101, help="随机种子，-1 为随机")
+    p_gen.add_argument("--burrs", action="store_true",
+                       help="叠加毛刺 / 突起（默认关闭，和 App 开关一致）")
     p_gen.add_argument("--since", default=None, help="起始时间 ISO8601，默认现在")
     p_gen.add_argument("--out", default="track.json", help="JSON 输出路径")
     p_gen.add_argument("--gpx", default=None, help="GPX 输出路径")

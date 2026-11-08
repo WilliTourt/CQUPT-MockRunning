@@ -299,7 +299,8 @@ def cmd_run(c: Client, args) -> int:
     start_dt = datetime.now()
     track, st = TE.build_track_poly(area["fence"], area["excludes"],
                                     pace_s, args.dist * 1000.0,
-                                    noise_sigma=args.noise)
+                                    noise_sigma=args.noise, burrs=args.burrs)
+    print(f"    轨迹模式: {'毛刺 / 突起' if args.burrs else '光滑（毛刺关闭）'}")
     real = st["duration"] / (st["distance"] / 1000.0)
     tm, ts = divmod(int(pace_s), 60)
     rm, rs = divmod(int(real), 60)
@@ -404,7 +405,10 @@ def main(argv=None) -> int:
     p_run.add_argument("--route", default="A", help="track_engine 的路线模板")
     p_run.add_argument("--pace", default="5:30", help="配速")
     p_run.add_argument("--dist", type=float, default=2.0, help="距离 km")
-    p_run.add_argument("--noise", type=float, default=0.6)
+    p_run.add_argument("--noise", type=float, default=0.6,
+                       help="GPS 抖动强度；0.6 ≈ 开阔地手机，野点幅度随之缩放")
+    p_run.add_argument("--burrs", action="store_true",
+                       help="叠加毛刺 / 突起（默认关闭，和 App 开关一致）")
     p_run.add_argument("--sport-type", default="1")
     p_run.add_argument("--realtime", action="store_true",
                        help="按真实配速节流上传（默认不节流，一把梭）")

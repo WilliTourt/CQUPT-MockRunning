@@ -47,6 +47,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
@@ -56,6 +57,7 @@ class MainActivity : AppCompatActivity(), RunListener {
     private lateinit var etPace: EditText
     private lateinit var etDist: EditText
     private lateinit var etTol: EditText
+    private lateinit var swBurrs: SwitchCompat
     private lateinit var spArea: Spinner
     private lateinit var btnRun: Button
     private lateinit var tvPaceWindow: TextView
@@ -150,6 +152,7 @@ class MainActivity : AppCompatActivity(), RunListener {
         etPace = findViewById(R.id.etPace)
         etDist = findViewById(R.id.etDist)
         etTol = findViewById(R.id.etTol)
+        swBurrs = findViewById(R.id.swBurrs)
         spArea = findViewById(R.id.spArea)
         btnRun = findViewById(R.id.btnRun)
         tvPaceWindow = findViewById(R.id.tvPaceWindow)
@@ -189,6 +192,13 @@ class MainActivity : AppCompatActivity(), RunListener {
         etPace.setText(prefs.getString("pace", "5:45"))
         etDist.setText(prefs.getString("dist", "2.0"))
         etTol.setText(prefs.getString("paceTol", "20"))
+
+        // 轨迹毛刺：默认关闭 = 光滑轨迹；打开 = 多圈错位 + 毛刺/突起。
+        // 先读 prefs 再挂监听，免得初始化时把默认值当成一次用户改动写回去。
+        swBurrs.isChecked = prefs.getBoolean("burrs", false)
+        swBurrs.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean("burrs", on).apply()
+        }
 
         findViewById<ImageButton>(R.id.btnLog).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
@@ -551,7 +561,8 @@ class MainActivity : AppCompatActivity(), RunListener {
                         targetM = dist * 1000.0,
                         noise = 0.6,
                         seed = (System.currentTimeMillis() % 100000).toInt(),
-                        paceToleranceSec = tol
+                        paceToleranceSec = tol,
+                        burrs = swBurrs.isChecked
                     )
                     refreshRunButton()
                 }
@@ -711,6 +722,7 @@ class MainActivity : AppCompatActivity(), RunListener {
         etPace.isEnabled = on
         etDist.isEnabled = on
         etTol.isEnabled = on
+        swBurrs.isEnabled = on
         spArea.isEnabled = on
     }
 
@@ -719,6 +731,7 @@ class MainActivity : AppCompatActivity(), RunListener {
             .putString("pace", etPace.text.toString().trim())
             .putString("dist", etDist.text.toString().trim())
             .putString("paceTol", etTol.text.toString().trim())
+            .putBoolean("burrs", swBurrs.isChecked)
             .putString("placeCode", areas.getOrNull(spArea.selectedItemPosition)?.placeCode ?: "")
             .apply()
     }

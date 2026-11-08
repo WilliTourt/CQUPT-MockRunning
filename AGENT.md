@@ -12,7 +12,7 @@
 | 名称 | 鲸鲸约跑（CampusRun） |
 | 一句话 | 微信小程序「重邮智慧体育」的打卡工具，**安卓单机版** |
 | 作者 | WilliTourt的蓝色大肥鱼 🐟 |
-| 当前版本 | **v1.10.1**（`versionCode 11001` / `versionName "1.10.1"`）—— 每版一个 tag，规则见 [§5.1](#51-版本号规则semver) |
+| 当前版本 | **v1.11.0**（`versionCode 11100` / `versionName "1.11.0"`）—— 每版一个 tag，规则见 [§5.1](#51-版本号规则semver) |
 | License | MIT |
 | 仓库 | https://github.com/WilliTourt/CQUPT-MockRunning |
 | 目标服务 | `https://sport.cqupt.edu.cn/new_wxapp`（重邮智慧体育小程序后端） |
@@ -70,7 +70,7 @@ CQUPT-MockRunning/
 │   ├── wxapkg_unpack.py      V1MMWX 包体解密 + 解包
 │   ├── clear_stale.py        清理服务端挂着的未结束记录
 │   ├── verify_trackgen.py    TrackGen.kt 的 Python 镜像（配速标定 / 围栏判定）
-│   └── verify_pace_profile.py  配速形态验证（3 场地 × 3 形态 × 4 配速 × 8 seed）
+│   └── verify_pace_profile.py  配速形态验证（3 场地 × 4 配速 × 3 seed + 起伏/容差）
 ├── android/ · ios/ · api/    早期作废的定位注入方案，仅作参考，不要在此基础上开发
 ├── docs/img/                 README 用的截图
 ├── README.md                 面向使用者的说明
@@ -81,7 +81,7 @@ CQUPT-MockRunning/
 
 | 页 | 放什么 |
 |---|---|
-| 主页 `panel_run` | 场地 / 配速 / 距离 / 容差 / 电池提示 / 开始 / 仪表盘 / 最后一行日志 |
+| 主页 `panel_run` | 场地 / 配速 / 距离 / 容差 / 毛刺开关 / 电池提示 / 开始 / 仪表盘 / 最后一行日志 |
 | 统计 `panel_stats` | 成绩汇总 + 分场地 + 最近记录 |
 | 上手 `panel_start` | 使用教程 / openid / 取码脚本 |
 | 设置 `panel_settings` | 主题 / 说明 / 开源仓库 / 署名 |
@@ -117,13 +117,17 @@ python track_engine.py gen --pace 5:45 --dist 2.0 --crs gcj02 --out track.json
 **改动 `TrackGen.kt` 后必须跑 `testDebugUnitTest`**，它会断言这几条硬指标：
 实测配速 == 目标配速（误差 ≤ 1 秒）、所有点落在电子围栏内、没有点落在禁跑区、
 **平均配速始终落在「目标 ± 容差」窗口内**、各种配速与种子下都不能越界、
-温和起伏既要有快慢差异也要有停顿、汇报速度与实际位移一致。
+温和起伏既要有快慢差异也要有停顿、汇报速度与实际位移一致，
+以及 **路线必须有毛刺/突起**（跳点数量、最大跳距、每秒转向角都有下限，
+不是把椭圆磨圆就完事）。**毛刺开关的两种模式都要测**：关闭时是 v1.10.1 光滑轨迹
+（5m+ 跳点为 0），打开后才有突起，且同一 seed 下坐标必须不同。
 
 改轨迹算法时，另外跑一遍 Python 镜像做交叉验证（不需要 Android SDK）：
 
 ```bash
 python refs/verify_trackgen.py        # 配速标定 + 围栏判定
 python refs/verify_pace_profile.py    # 配速起伏 × 3 场地 × 4 配速
+python refs/verify_real_areas.py      # 三个真实场地 + 真实 jpq 禁跑区
 ```
 
 **界面结构约定**：见 §3 的分工表。四页在 `activity_main.xml` 里用 `<include>` 拼起来，
