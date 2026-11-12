@@ -35,13 +35,11 @@ import android.os.PowerManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.ScrollView
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -58,7 +56,6 @@ class MainActivity : AppCompatActivity(), RunListener {
     private lateinit var etDist: EditText
     private lateinit var etTol: EditText
     private lateinit var swBurrs: SwitchCompat
-    private lateinit var spArea: Spinner
     private lateinit var btnRun: Button
     private lateinit var tvPaceWindow: TextView
 
@@ -108,12 +105,6 @@ class MainActivity : AppCompatActivity(), RunListener {
     private lateinit var engine: RunEngine
     private val ui = Handler(Looper.getMainLooper())
 
-    /** 当前绑进下拉框的那份场地，下标要和 adapter 一一对应，不能直接用 AreaStore 的快照。 */
-    private var areas: List<Area> = emptyList()
-
-    /** [areas] 对应 AreaStore 的哪个 revision，用来判断要不要重绑。 */
-    private var boundRevision = -1L
-
     /** 串行化「连接 + 拉场地」，免得自动补拉和点【开始打卡】同时换 token。 */
     private val fetchLock = Any()
 
@@ -153,7 +144,6 @@ class MainActivity : AppCompatActivity(), RunListener {
         etDist = findViewById(R.id.etDist)
         etTol = findViewById(R.id.etTol)
         swBurrs = findViewById(R.id.swBurrs)
-        spArea = findViewById(R.id.spArea)
         btnRun = findViewById(R.id.btnRun)
         tvPaceWindow = findViewById(R.id.tvPaceWindow)
 
@@ -266,9 +256,6 @@ class MainActivity : AppCompatActivity(), RunListener {
         updateThemeUi()
         askNotificationPermission()
         loadScript()
-        // 先给下拉框一个占位项（onResume 里的 syncAreas 会把它换成真场地）。
-        // 不给的话首次启动时 Spinner 没有 adapter，看起来像个坏掉的空框。
-        bindAreas(emptyList(), "")
         showTab(0)
         restoreOrInit()
     }
@@ -327,8 +314,7 @@ class MainActivity : AppCompatActivity(), RunListener {
         super.onResume()
         updateBatteryHint()
         updatePaceWindow()
-        // openid 是在设置页填的，填完回来必须立刻反映到场地下拉框上，
-        // 而不是等用户点了一次【开始打卡】才刷新。见 syncAreas()。
+        // openid 在上手页填写，回到主页时后台预加载场地；点开始时再弹窗选择。
         syncAreas()
     }
 
@@ -341,16 +327,10 @@ class MainActivity : AppCompatActivity(), RunListener {
     // ---------------------------------------------------------------- 场地同步
 
     /**
-     * 把 AreaStore 里的场地同步到主页下拉框，必要时补拉一次。
+     * 场地不再常驻主页，而是在点【开始打卡】后从 [AreaStore] 取并弹窗选择。
      *
-     * 这是「填完 openid 主页不刷新」的正解：设置页那边一填 openid 就写进 prefs、
-     * 拉到场地就发布到 AreaStore，主页 onResume 一比对 revision 就重绑下拉框，
-     * 不需要重打网络，也不需要用户先去点一次【开始打卡】。
-     *
-     * 三种情况：
-     *   ① 换过 openid → 旧场地作废，重新拉（换账号不能还显示别人的场地）
-     *   ② 已有当前 openid 的结果 → 直接绑定
-     *   ③ 还没拉过、也不在失败冷却期、openid 也没被判定无效 → 后台补拉
+     * onResume 仍会静默补拉一次，这样用户点开始时大多能立刻看到选择框；
+     * 真没拉到也不影响，doRun() 会在用户主动开始时再明确拉取一次。
      */
     private fun syncAreas() {
         val oid = openid()
@@ -358,17 +338,10 @@ class MainActivity : AppCompatActivity(), RunListener {
         // ① 设置页换了 openid：上一份场地属于别人，必须先丢
         if (AreaStore.publishedOpenid.isNotEmpty() && AreaStore.publishedOpenid != oid) {
             AreaStore.invalidate()
-            boundRevision = -1L
         }
 
-        // ② 有现成的就直接绑，不再动网络
-        if (AreaStore.hasResultFor(oid)) {
-            bindIfChanged()
-            return
-        }
-
-        // 之前绑过但现在没数据了（比如换了 openid），先把下拉框清空，别留旧场地
-        if (areas.isNotEmpty()) bindList(emptyList())
+        // ② 有现成的就不动网络
+        if (AreaStore.hasResultFor(oid)) return
 
         // ③ 没 openid 就没什么可拉的
         if (oid.isEmpty()) return
@@ -389,26 +362,6 @@ class MainActivity : AppCompatActivity(), RunListener {
             }
         }.start()
     }
-
-    /** revision 变了才重绑。 */
-    private fun bindIfChanged() {
-        if (boundRevision == AreaStore.revision) return
-        bindList(AreaStore.snapshot())
-    }
-
-    /** 无条件把这份场地铺进下拉框，并记住它对应哪个 revision。 */
-    private fun bindList(list: List<Area>) {
-        // 先记下当前选中项，再换 areas —— 换完就读不到旧的了
-        val keep = currentSelection()
-        areas = list
-        bindAreas(list, keep)
-        boundRevision = AreaStore.revision
-    }
-
-    /** 界面上当前选中的场地编号；没绑过场地时退回 prefs 里上次打卡用的那个。 */
-    private fun currentSelection(): String =
-        areas.getOrNull(spArea.selectedItemPosition)?.placeCode
-            ?: prefs.getString("placeCode", "").orEmpty()
 
     // ---------------------------------------------------------------- 配速窗口
 
@@ -433,7 +386,7 @@ class MainActivity : AppCompatActivity(), RunListener {
         log("")
         log("本程序不申请定位权限，也不会打开 GPS。")
         log("① openid 在右上角【设置】里填，连一次场地；")
-        log("② 回到本页设好配速 → 点【开始打卡】。")
+        log("② 回到本页设好配速 → 点【开始打卡】并选择区域。")
         log("开始之后就可以退出了：锁屏、切走、揣兜里都行。")
         log("这段时间你就去操场上挨个摄像头刷脸。")
     }
@@ -454,10 +407,7 @@ class MainActivity : AppCompatActivity(), RunListener {
         // 自动补拉和点【开始打卡】都会走这里；串行化能避免两条线程交替换 token。
         synchronized(fetchLock) {
             // 排队等锁的这段时间里，别人（比如自动补拉）可能已经拉好了 —— 那就别重复打网络。
-            if (AreaStore.hasAreasFor(oid)) {
-                ui.post { bindIfChanged() }
-                return true
-            }
+            if (AreaStore.hasAreasFor(oid)) return true
             if (!engine.connect(oid)) {
                 // 换 token 失败分两种，处理方式完全不同：网络问题过一会儿还能重试，
                 // openid 无效则是重试多少次都一样。
@@ -475,7 +425,6 @@ class MainActivity : AppCompatActivity(), RunListener {
                 return false
             }
             AreaStore.publish(oid, list)
-            ui.post { bindIfChanged() }
             return list.isNotEmpty()
         }
     }
@@ -531,9 +480,12 @@ class MainActivity : AppCompatActivity(), RunListener {
             return
         }
         savePrefs()
+        val burrs = swBurrs.isChecked
 
         busy = true
         setEnabled(false)
+        btnRun.isEnabled = false
+        btnRun.text = getString(R.string.loading_areas)
         Thread {
             try {
                 // 正常路径上 onResume 的 syncAreas() 已经把场地填好了，这里不会进。
@@ -546,28 +498,77 @@ class MainActivity : AppCompatActivity(), RunListener {
             } finally {
                 ui.post {
                     busy = false
+                    if (isFinishing || isDestroyed) return@post
                     setEnabled(true)
-                    // 先按库里的最新结果重绑一次，保证下拉框和 selectedItemPosition 对齐
-                    bindIfChanged()
-                    val area = areas.getOrNull(spArea.selectedItemPosition)
-                    if (area == null) {
-                        toast(getString(R.string.need_area))
+                    btnRun.isEnabled = true
+                    refreshRunButton()
+                    if (RunController.running) return@post
+
+                    val candidates =
+                        if (AreaStore.publishedOpenid == oid) AreaStore.snapshot() else emptyList()
+                    if (candidates.isEmpty()) {
+                        toast(
+                            getString(
+                                if (AreaStore.isBadOpenid(oid)) R.string.conn_bad_openid
+                                else R.string.need_area
+                            )
+                        )
                         return@post
                     }
-                    RunController.start(
-                        openid = oid,
-                        area = area,
-                        paceSecKm = pace,
-                        targetM = dist * 1000.0,
-                        noise = 0.6,
-                        seed = (System.currentTimeMillis() % 100000).toInt(),
-                        paceToleranceSec = tol,
-                        burrs = swBurrs.isChecked
-                    )
-                    refreshRunButton()
+                    showAreaPicker(oid, candidates, pace, dist, tol, burrs)
                 }
             }
         }.start()
+    }
+
+    /**
+     * 开始打卡前才选区域。
+     *
+     * 取消弹窗只结束这次开始操作，不启动线程；确认时才沿用原来的
+     * [RunController.start] 参数链路。上次用过的场地会默认勾选，首次使用则必须主动选。
+     */
+    private fun showAreaPicker(
+        oid: String,
+        candidates: List<Area>,
+        pace: Double,
+        dist: Double,
+        tol: Double,
+        burrs: Boolean
+    ) {
+        val previous = prefs.getString("placeCode", "").orEmpty()
+        var selected = candidates.indexOfFirst { it.placeCode == previous }
+        val items = candidates.map { it.toString() }.toTypedArray()
+
+        lateinit var dialog: AlertDialog
+        dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.area_picker_title)
+            .setSingleChoiceItems(items, selected) { _, which ->
+                selected = which
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+            }
+            .setNegativeButton(R.string.dlg_cancel, null)
+            .setPositiveButton(R.string.b_run, null)
+            .create()
+        dialog.show()
+
+        val positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        positive.isEnabled = selected >= 0
+        positive.setOnClickListener {
+            val area = candidates.getOrNull(selected) ?: return@setOnClickListener
+            dialog.dismiss()
+            savePrefs(area.placeCode)
+            RunController.start(
+                openid = oid,
+                area = area,
+                paceSecKm = pace,
+                targetM = dist * 1000.0,
+                noise = 0.6,
+                seed = (System.currentTimeMillis() % 100000).toInt(),
+                paceToleranceSec = tol,
+                burrs = burrs
+            )
+            refreshRunButton()
+        }
     }
 
     private fun doStop() {
@@ -701,39 +702,21 @@ class MainActivity : AppCompatActivity(), RunListener {
         }
     }
 
-    /**
-     * 把场地铺进下拉框，并尽量保住用户已经选中的那个。
-     *
-     * @param keep 想保住的 placeCode。由调用方在替换 [areas] **之前**取好 ——
-     *   否则每次场地刷新（比如从设置页连完回来）都会把用户刚选的场地重置掉。
-     */
-    private fun bindAreas(list: List<Area>, keep: String) {
-        val names = if (list.isEmpty()) listOf(getString(R.string.need_area))
-        else list.map { it.toString() }
-        spArea.adapter = ArrayAdapter(
-            this, android.R.layout.simple_spinner_dropdown_item, names
-        )
-
-        val idx = list.indexOfFirst { it.placeCode == keep }
-        if (idx >= 0) spArea.setSelection(idx)
-    }
-
     private fun setEnabled(on: Boolean) {
         etPace.isEnabled = on
         etDist.isEnabled = on
         etTol.isEnabled = on
         swBurrs.isEnabled = on
-        spArea.isEnabled = on
     }
 
-    private fun savePrefs() {
-        prefs.edit()
+    private fun savePrefs(placeCode: String? = null) {
+        val editor = prefs.edit()
             .putString("pace", etPace.text.toString().trim())
             .putString("dist", etDist.text.toString().trim())
             .putString("paceTol", etTol.text.toString().trim())
             .putBoolean("burrs", swBurrs.isChecked)
-            .putString("placeCode", areas.getOrNull(spArea.selectedItemPosition)?.placeCode ?: "")
-            .apply()
+        if (placeCode != null) editor.putString("placeCode", placeCode)
+        editor.apply()
     }
 
     // ================================================================ 上手页
@@ -741,9 +724,8 @@ class MainActivity : AppCompatActivity(), RunListener {
     /**
      * 连接并拉取场地。
      *
-     * 场地的选择在【主页】做，所以这里连上之后把结果发布到 [AreaStore]，
-     * 主页 onResume 一比对 revision 就会自动重绑下拉框 —— 不需要用户先切回主页
-     * 再点一次【开始打卡】才看到场地（这就是「填完 openid 主页不刷新」的修复点）。
+     * 场地选择在点【开始打卡】后的弹窗里做，所以这里连上之后把结果发布到 [AreaStore]，
+     * 用户切回主页开始打卡时就能直接使用，不需要重新打一次网络。
      */
     private fun doConnect() {
         if (panelBusy) return

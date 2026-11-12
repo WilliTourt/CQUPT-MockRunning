@@ -36,11 +36,12 @@
     <string name="h_openid">粘贴你的 openid</string>
     <string name="b_connect">连接并拉取场地</string>
     <string name="b_openid_help">openid 怎么拿？</string>
-    <string name="l_area">跑步区域</string>
     <string name="l_pace">配速 (分:秒 / km)</string>
     <string name="l_dist">距离 (km)</string>
     <string name="b_run">开始打卡</string>
     <string name="b_stop">结束打卡</string>
+    <string name="loading_areas">正在加载场地…</string>
+    <string name="area_picker_title">选择跑步区域</string>
     <string name="b_clear">清空</string>
     <string name="b_share">导出</string>
     <string name="b_copy">复制</string>
@@ -84,7 +85,7 @@
 
     <!-- 使用教程 -->
     <string name="tutorial_title">使用教程</string>
-    <string name="tutorial_body">第 1、2 步只做一次，以后每次只要第 3、4 步。\n\n【1】拿 openid（电脑上，只做一次）\n电脑装 Python 3 → 用电脑微信打开一次「重邮智慧体育」并完成绑定 → 运行 get_openid.py → 把输出的 openid 抄下来。\n\n【2】设电池白名单（只做一次）\n点【打卡】页那条电池提示，选「允许」。不设的话息屏后进度会慢得像爬。\n\n【3】填参数开跑\n粘贴 openid → 点「连接并拉取场地」→ 选场地 → 配速填 5:45、距离填 2.0 → 点「开始打卡」。\n\n【4】看结果\n跑满 2 公里会自动结束。回到本页，在「成绩统计」点刷新，看到 ✓ 就成了。\n\n注意：开始打卡之前人要先到操场。开始之后把手机揣兜里，挨个摄像头走过去就行 —— 可以锁屏、切走，但别从最近任务里划掉。</string>
+    <string name="tutorial_body">第 1、2 步只做一次，以后每次只要第 3、4 步。\n\n【1】拿 openid（电脑上，只做一次）\n电脑装 Python 3 → 用电脑微信打开一次「重邮智慧体育」并完成绑定 → 运行 get_openid.py → 把输出的 openid 抄下来。\n\n【2】设电池白名单（只做一次）\n点【主页】那条电池提示，选「允许」。不设的话息屏后进度会慢得像爬。\n\n【3】填参数开跑\n粘贴 openid → 点「连接并拉取场地」→ 回主页把配速填 5:45、距离填 2.0 → 点「开始打卡」→ 选择合适的跑步区域。\n\n【4】看结果\n跑满 2 公里会自动结束。回到本页，在「成绩统计」点刷新，看到 ✓ 就成了。\n\n注意：开始打卡之前人要先到操场。开始之后把手机揣兜里，挨个摄像头走过去就行 —— 可以锁屏、切走，但别从最近任务里划掉。</string>
 
     <!-- 说明信息 -->
     <string name="about_title">说明</string>
@@ -110,7 +111,7 @@
     <string name="bad_pace">配速格式不对，示例 5:45</string>
     <string name="bad_dist">距离格式不对，示例 2.0</string>
     <string name="bad_tol">抖动格式不对，填秒数，示例 20</string>
-    <string name="need_area">还没有场地，先点「连接并拉取场地」</string>
+    <string name="need_area">还没有可用场地，请先到「上手」页连接并拉取场地</string>
     <string name="stopping">正在停止，当前批次传完就停</string>
     <string name="log_cleared">只清了显示，RunController 里还留着最近 400 行</string>
     <string name="log_empty">日志是空的</string>
