@@ -2,6 +2,16 @@
 
 > 让它自己把 2 公里跑完。你只需要去摄像头下面走一趟。
 
+微信小程序「重邮智慧体育」的打卡工具，**安卓单机版**。不申请定位权限，不连服务器，不需要登录。
+
+<p align="center">
+  <img src="docs/img/icon.png" width="200" alt="鲸鲸约跑">
+</p>
+
+**当前版本 v1.11.2** · [**源码与 Releases**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
+
+自 v1.9 起就不再提供编译后产物。可以自行编译使用。
+
 ## 严正声明
 
 **本项目仅供个人学习与安全研究。逆向、接口调用、自动打卡均由使用者自行发起。**
@@ -20,23 +30,24 @@
 
 **fork 是各自独立的仓库，作者不参与、不审核、也不为其内容背书。** 从 fork 或任何第三方渠道拿到的产物，和从陌生人手里拿没有区别。
 
-### 怎么确认手上这份是官方版
+### 怎么确认手上这份是本仓库版本
 
-**看签名和哈希，别看界面 —— 界面谁都能做得一模一样。**
+**看签名和哈希**
 
-从 **v1.11.2** 起，官方包用项目自己的 release 密钥签名。证书指纹固定为：
+从 **v1.11.2** 起，包体用项目自己的 release 密钥签名。证书指纹固定为：
 
 ```
 SHA-256  E76F223601F7380283CA64865031318EFD4E928A1B2F41DF37B49106900D4BE7
 ```
 
-以前那些 debug 签名的版本全部作废（原因见下）。
+以前那些 debug 签名的版本全部作废。
 
 每个官方包的 APK SHA-256 会记在这里：
 
 | 版本 | APK SHA-256 |
 |---|---|
 | v1.11.2 | `C79D2C0BEB5AF1EAB288A2B56FB20419CD13FEE498933A419049329AEE143E88` |
+|     | `   ` |
 
 自己核对：
 
@@ -52,30 +63,9 @@ shasum -a 256 鲸鲸约跑-v1.11.2.apk
 
 **对不上就不是这份代码编出来的，别装。**
 
-> **为什么以前那种“装上去看着正常”证明不了任何事：**
-> debug keystore 是全网通用的（`~/.android/debug.keystore`，口令就是 `android`），
-> 任何人重新打包都能签出一个签名完全相同、**能原地覆盖安装**的包，系统不会拦、
-> 校验也不会报。换成正式密钥之后，别人的包至少覆盖不过去。
->
-> 另外从 v1.11.2 起，`assembleRelease` 在没有 `keystore.properties` 的情况下
-> **不签名**（产出 `app-release-unsigned.apk`，装不上），不会偷偷回落到 debug key。
-
-
 ---
 
-微信小程序「重邮智慧体育」的打卡工具，**安卓单机版**。不申请定位权限，不连服务器，不需要登录。
-
-<p align="center">
-  <img src="docs/img/icon.png" width="200" alt="鲸鲸约跑">
-</p>
-
-**当前版本 v1.11.2** · [**源码与 Releases**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
-
-自 v1.9 起就不再提供编译后产物。可以自行编译使用。
-
----
-
-## 一、它长什么样 （页面为旧v1.10.1截图）
+## 一、它长什么样 （小部分页面为旧v1.10.1截图）
 
 底部一条**悬浮切换栏**，四个页面：
 
@@ -90,7 +80,7 @@ shasum -a 256 鲸鲸约跑-v1.11.2.apk
 
 | 主页 | 统计 | 上手 | 设置 |
 |---|---|---|---|
-| <img src="docs/img/01-run.png" width="200"> | <img src="docs/img/02-stats.png" width="200"> | <img src="docs/img/03-start.png" width="200"> | <img src="docs/img/04-settings.png" width="200"> |
+| <img src="docs/img/01-run.jpg" width="200"> | <img src="docs/img/02-stats.jpg" width="200"> | <img src="docs/img/03-start.jpg" width="200"> | <img src="docs/img/04-settings.jpg" width="200"> |
 
 跑起来是这样：
 
@@ -189,11 +179,7 @@ openid 是你在小程序里的身份编号。**换登录凭证只需要这一�
 
 ### 第 4 步：看结果
 
-跑完切到底部【统计】页，点「刷新」：
-
-<img src="docs/img/02-stats.png" width="320">
-
-看到 `✓` 就成了。
+跑完切到底部【统计】页，点「刷新」，看到 `✓` 就成了。
 
 > 服务端会做两个判定：
 > 1. **配速 / 里程** —— 工具保证达标
