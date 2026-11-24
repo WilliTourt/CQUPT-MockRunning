@@ -22,6 +22,7 @@ captures/
 # ─────────── Android 本地配置 ───────────
 # 里面是本机的 SDK 路径，不该进仓库
 local.properties
+keystore.properties
 *.keystore
 *.jks
 

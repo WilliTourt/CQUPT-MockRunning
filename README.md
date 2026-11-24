@@ -20,6 +20,47 @@
 
 **fork 是各自独立的仓库，作者不参与、不审核、也不为其内容背书。** 从 fork 或任何第三方渠道拿到的产物，和从陌生人手里拿没有区别。
 
+### 怎么确认手上这份是官方版
+
+**看签名和哈希，别看界面 —— 界面谁都能做得一模一样。**
+
+从 **v1.11.2** 起，官方包用项目自己的 release 密钥签名。证书指纹固定为：
+
+```
+SHA-256  E76F223601F7380283CA64865031318EFD4E928A1B2F41DF37B49106900D4BE7
+```
+
+以前那些 debug 签名的版本全部作废（原因见下）。
+
+每个官方包的 APK SHA-256 会记在这里：
+
+| 版本 | APK SHA-256 |
+|---|---|
+| v1.11.2 | `C79D2C0BEB5AF1EAB288A2B56FB20419CD13FEE498933A419049329AEE143E88` |
+
+自己核对：
+
+```powershell
+# Windows
+certutil -hashfile 鲸鲸约跑-v1.11.2.apk SHA256
+```
+
+```bash
+# macOS / Linux
+shasum -a 256 鲸鲸约跑-v1.11.2.apk
+```
+
+**对不上就不是这份代码编出来的，别装。**
+
+> **为什么以前那种“装上去看着正常”证明不了任何事：**
+> debug keystore 是全网通用的（`~/.android/debug.keystore`，口令就是 `android`），
+> 任何人重新打包都能签出一个签名完全相同、**能原地覆盖安装**的包，系统不会拦、
+> 校验也不会报。换成正式密钥之后，别人的包至少覆盖不过去。
+>
+> 另外从 v1.11.2 起，`assembleRelease` 在没有 `keystore.properties` 的情况下
+> **不签名**（产出 `app-release-unsigned.apk`，装不上），不会偷偷回落到 debug key。
+
+
 ---
 
 微信小程序「重邮智慧体育」的打卡工具，**安卓单机版**。不申请定位权限，不连服务器，不需要登录。
@@ -28,7 +69,7 @@
   <img src="docs/img/icon.png" width="200" alt="鲸鲸约跑">
 </p>
 
-**当前版本 v1.11.1** · ~**下载 APK**~ [**下载源码**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
+**当前版本 v1.11.2** · [**源码与 Releases**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
 
 自 v1.9 起就不再提供编译后产物。可以自行编译使用。
 
@@ -249,6 +290,17 @@ cd android-app
 ```
 
 需要 **JDK 17** + **Android SDK 34**。产物在 `app/build/outputs/apk/release/`。
+>
+> **编译出来的是未签名的包，装不上 —— 这是故意的。**
+> 仓库里没有 `keystore.properties`，所以 `assembleRelease` 产出的是
+> `app-release-unsigned.apk`。要能装的话：
+>
+> - **想跑起来** → `./gradlew assembleDebug`，用系统 debug keystore 签
+> - **想要能长期更新的包** → 自己生成一个 keystore，做法见
+>   [`android-app/README.md`](android-app/README.md)
+>
+> 这么做是为了堵住「拿 debug key 签个包冒充官方版」——debug keystore 全网通用
+> （`~/.android/debug.keystore`，口令 `android`），那种签名谁都能造，验不了真伪。
 
 详细的构建说明、工具链摆放、踩坑记录见 **[`android-app/README.md`](android-app/README.md)**。
 

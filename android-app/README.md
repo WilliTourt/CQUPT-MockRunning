@@ -1,6 +1,6 @@
 # 鲸鲸约跑
 
-> **作者：WilliTourt的蓝色大肥鱼 🐟** · v1.11.0
+> **作者：WilliTourt的蓝色大肥鱼 🐟** · v1.11.2
 
 替你跑完这两公里 · 你只管去刷脸。
 
@@ -226,6 +226,17 @@ Activity.onCreate()
 
 ## 版本记录
 
+### v1.11.2
+| 改动 | 说明 |
+|---|---|
+| 🔐 **release 改用正式 keystore 签名** | 以前直接用 debug key —— 那个 keystore 全网通用，谁都能签出能原地覆盖安装的包。现在从 `keystore.properties` 读配置，没有就不签名（产出 `app-release-unsigned.apk`），绝不回落 debug key |
+| 📄 **README 加验真段** | 证书 SHA-256 + 每个官方包的 APK SHA-256，附 `certutil` / `shasum` 核对命令 |
+| ✂️ **说明页去掉原理段** | 原来把「纯客户端信任架构、服务端不回采、无签名、无加密」写进了 App 的说明页，删掉；「轨迹」那条压成一句 |
+| 📢 **说明页加安装包声明** | 任何平台上流传的安装包都不是作者发布的，包括私聊 / 加群 / 付费 / 其他链接 |
+
+> ⚠️ **签名换了。从 v1.11.1 及更早的 debug 签名版本升到 v1.11.2，要先卸载再装** ——
+> 两个签名不同，系统不允许覆盖安装。
+
 ### v1.11.0
 | 改动 | 说明 |
 |---|---|
@@ -435,6 +446,35 @@ E:\AndroidDev\gradle-8.7\bin\gradle.bat `
 > wrapper 第一次跑会自动下载 Gradle 8.7 到 `%USERPROFILE%\.gradle`。
 
 产物在 `android-app\app\build\outputs\apk\release\app-release.apk`。
+
+> **注意：克隆下来的仓库里没有 `keystore.properties`，所以上面这条命令产出的是
+> `app-release-unsigned.apk` —— 未签名，装不上。** 这是有意的，见本节末尾。
+>
+> 要能装的话，两条路：
+>
+> 1. **只想到处跑跑** → `gradlew assembleDebug`，用系统 debug keystore 签，装上就能用
+> 2. **想要能长期覆盖更新的包** → 自己生成一个 keystore：
+>
+>    ```bash
+>    keytool -genkeypair -v -keystore my-release.jks -alias my-key \
+>      -keyalg RSA -keysize 4096 -validity 10950
+>    ```
+>
+>    然后写 `android-app/keystore.properties`（该文件已在 `.gitignore` 里）：
+>
+>    ```properties
+>    storeFile=C:\\path\\to\\my-release.jks
+>    storePassword=你的口令
+>    keyAlias=my-key
+>    keyPassword=你的口令
+>    ```
+>
+>    `storeFile` 用绝对路径，反斜杠要写成 `\\`。
+>    有它之后 `assembleRelease` 就会用你的 key 签，产出可安装的 `app-release.apk`。
+>
+> **为什么默认不签：** debug keystore 是全网通用的（`~/.android/debug.keystore`，
+> 口令 `android`），谁都能签出一个签名相同、能**原地覆盖安装**的包。所以 release
+> 构建宁可不出签名，也不回落到 debug key —— 那样签名校验等于没做。
 
 跑单元测试（验证配速标定和围栏判定）：
 

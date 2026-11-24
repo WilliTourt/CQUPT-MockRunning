@@ -2,9 +2,20 @@
  * 校园跑——重邮智慧体育打卡工具（单机版）
  * 作者：蓝色大肥鱼🐟
  */
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+// 签名配置从 keystore.properties 读 —— 那个文件在 .gitignore 里，不进仓库
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) {
+        FileInputStream(keystorePropsFile).use { load(it) }
+    }
 }
 
 android {
@@ -17,8 +28,20 @@ android {
         targetSdk = 34
         // 版本号直接写在这里，不依赖任何分支。规则与清单见 AGENT.md §5.1 / §5.2
         // versionCode = MAJOR*10000 + MINOR*100 + PATCH
-        versionCode = 11100
-        versionName = "1.11.0"
+        versionCode = 11102
+        versionName = "1.11.2"
+    }
+
+    signingConfigs {
+        // 没有 keystore.properties 就不注册，下面 release 也不会分到它
+        if (keystorePropsFile.exists()) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -28,8 +51,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // 自用，直接用 debug 签名，免得配 keystore
-            signingConfig = signingConfigs.getByName("debug")
+            // 有 keystore.properties 就用正式 key 签；没有就**不签**
+            // （产出的是 app-release-unsigned.apk，装不上，不会有人误当官方包）
+            //
+            // 绝不回落到 debug key —— 那个 keystore 全网通用
+            // （~/.android/debug.keystore，密码 android），谁都能编一个
+            // 签名相同、能原地覆盖安装的包，签名校验等于没做。
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

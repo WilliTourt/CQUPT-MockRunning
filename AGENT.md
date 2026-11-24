@@ -12,7 +12,7 @@
 | 名称 | 鲸鲸约跑（CampusRun） |
 | 一句话 | 微信小程序「重邮智慧体育」的打卡工具，**安卓单机版** |
 | 作者 | WilliTourt的蓝色大肥鱼 🐟 |
-| 当前版本 | **v1.11.0**（`versionCode 11100` / `versionName "1.11.0"`）—— 每版一个 tag，规则见 [§5.1](#51-版本号规则semver) |
+| 当前版本 | **v1.11.2**（`versionCode 11102` / `versionName "1.11.2"`）—— 每版一个 tag，规则见 [§5.1](#51-版本号规则semver) |
 | License | MIT |
 | 仓库 | https://github.com/WilliTourt/CQUPT-MockRunning |
 | 目标服务 | `https://sport.cqupt.edu.cn/new_wxapp`（重邮智慧体育小程序后端） |
@@ -35,7 +35,10 @@
 - Kotlin 1.9.24 + Android Gradle Plugin 8.5.2，Gradle 8.7（wrapper 已带 jar）
 - `compileSdk 34` / `minSdk 24` / `targetSdk 34` / JDK 17
 - AppCompat `DayNight` 主题，颜色**全部走资源引用**，不要写死色值
-- Release 直接用 debug 签名（自用项目，不配 keystore）
+- **Release 用正式 keystore 签名**，配置在 `android-app/keystore.properties`
+  （不进仓库），keystore 本体在 `C:\Users\WilliTourt\jingjing-keystore\`。
+  没有该文件时 release **不签名**（产出 `app-release-unsigned.apk`），
+  **绝不回落到 debug key** —— 那个 keystore 全网通用，等于没签名。
 
 **Python 工具链**
 
@@ -227,7 +230,7 @@ git grep -nE '\bo[A-Za-z0-9_-]{27}\b' -- . | grep -v 'X\{20,\}'
 git grep -nEi '(BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key["'"'"']?\s*[:=]|secret["'"'"']?\s*[:=]|passwd|password["'"'"']?\s*[:=])'
 
 # ③ 扫未被忽略的敏感文件（必须无输出）
-git status --porcelain --ignored | grep -E 'openid_extract|openid_hunt|\.flow$|wechat_cache|local\.properties|\.jks|\.keystore'
+git status --porcelain --ignored | grep -E 'openid_extract|openid_hunt|\.flow$|wechat_cache|local\.properties|keystore\.properties|\.jks|\.keystore'
 ```
 
 更稳妥的做法是连**待提交内容**一起看，而不只是工作区：
