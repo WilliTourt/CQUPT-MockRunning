@@ -139,7 +139,7 @@ openid 是你在小程序里的身份编号。**换登录凭证只需要这一�
 
 ### 第 3 步：填参数开跑
 
-<img src="docs/img/01-run.png" width="320">
+<img src="docs/img/01-run.jpg" width="320">
 
 | 填什么 | 填多少 |
 |---|---|
