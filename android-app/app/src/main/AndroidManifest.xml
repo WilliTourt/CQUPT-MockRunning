@@ -30,7 +30,7 @@
             android:value="@string/app_author" />
         <meta-data
             android:name="version"
-            android:value="1.11.2" />
+            android:value="1.11.3" />
 
         <activity
             android:name=".MainActivity"

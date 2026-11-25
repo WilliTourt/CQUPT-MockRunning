@@ -8,7 +8,7 @@
   <img src="docs/img/icon.png" width="200" alt="鲸鲸约跑">
 </p>
 
-**当前版本 v1.11.2** · [**源码与 Releases**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
+**当前版本 v1.11.3** · [**源码与 Releases**](https://github.com/WilliTourt/CQUPT-MockRunning/releases/latest) · [变更记录](CHANGELOG.md) · [技术细节](#六技术细节) · [文件说明](#七文件说明)
 
 自 v1.9 起就不再提供编译后产物。可以自行编译使用。
 
@@ -46,6 +46,7 @@ SHA-256  E76F223601F7380283CA64865031318EFD4E928A1B2F41DF37B49106900D4BE7
 
 | 版本 | APK SHA-256 |
 |---|---|
+| v1.11.3 | `ED02A0137A5610F11E918888865CFDD889C08438CCED5D6C57C5777D518230B3` |
 | v1.11.2 | `C79D2C0BEB5AF1EAB288A2B56FB20419CD13FEE498933A419049329AEE143E88` |
 |     | `   ` |
 

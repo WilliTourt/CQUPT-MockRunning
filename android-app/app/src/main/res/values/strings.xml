@@ -30,6 +30,8 @@
     <string name="batt_msg">安卓深度省电（Doze）会冻结后台的 CPU 和网络，连 CPU 唤醒锁都会忽略。表现就是：你把 App 揣兜里息屏，进度条还在走但慢得像爬，只有用时在涨。\n\n点「去设置」，系统会弹窗问「允许应用始终在后台运行吗」，选「允许」。\n\n设完按返回键回到这里，本条会自动变绿，不用重启 App。\n\n只需要设置一次。</string>
     <string name="batt_go">去设置</string>
     <string name="batt_ok_tip">已在电池优化白名单\n息屏后台不会被冻结，可以放心揣兜里</string>
+    <!-- 省电模式 -->
+    <string name="power_save_tip">建议手机不要开省电模式。省电模式下通知栏的进度会刷新得很慢，不影响打卡结果。</string>
     <string name="batt_bad">⚠ 未加入电池优化白名单\n息屏后系统可能冻结后台，进度会变慢。\n点这里去设置，允许后返回本页会自动变绿</string>
 
     <!-- 打卡面板 -->
