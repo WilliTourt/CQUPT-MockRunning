@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  场地选择弹窗。
+  不用 AlertDialog，因为它的窗口背景是系统 Material 样式，四角会露出灰白色；
+  这里用 Dialog + 透明窗口背景，让下面这张卡片自己说了算。
+  卡片语言和主页一致：白底、18dp 圆角、1dp 描边。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/box"
+    android:orientation="vertical"
+    android:paddingStart="18dp"
+    android:paddingTop="20dp"
+    android:paddingEnd="18dp"
+    android:paddingBottom="18dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/area_picker_title"
+        android:textColor="@color/fg"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:lineSpacingExtra="2dp"
+        android:text="@string/area_picker_hint"
+        android:textColor="@color/fg_dim"
+        android:textSize="13sp" />
+
+    <!-- 场地行由代码填 -->
+    <LinearLayout
+        android:id="@+id/areaRows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="vertical" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnAreaCancel"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_ghost"
+            android:text="@string/dlg_cancel"
+            android:textAllCaps="false"
+            android:textColor="@color/fg_dim"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/btnAreaStart"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:background="@drawable/btn_solid"
+            android:text="@string/b_area_start"
+            android:textAllCaps="false"
+            android:textColor="@color/on_accent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

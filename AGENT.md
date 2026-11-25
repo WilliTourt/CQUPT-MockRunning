@@ -12,7 +12,7 @@
 | 名称 | 鲸鲸约跑（CampusRun） |
 | 一句话 | 微信小程序「重邮智慧体育」的打卡工具，**安卓单机版** |
 | 作者 | WilliTourt的蓝色大肥鱼 🐟 |
-| 当前版本 | **v1.11.3**（`versionCode 11103` / `versionName "1.11.3"`）—— 每版一个 tag，规则见 [§5.1](#51-版本号规则semver) |
+| 当前版本 | **v1.12.0**（`versionCode 11200` / `versionName "1.12.0"`）—— 每版一个 tag，规则见 [§5.1](#51-版本号规则semver) |
 | License | MIT |
 | 仓库 | https://github.com/WilliTourt/CQUPT-MockRunning |
 | 目标服务 | `https://sport.cqupt.edu.cn/new_wxapp`（重邮智慧体育小程序后端） |
@@ -84,10 +84,10 @@ CQUPT-MockRunning/
 
 | 页 | 放什么 |
 |---|---|
-| 主页 `panel_run` | 配速 / 距离 / 容差 / 毛刺开关 / 电池提示 / 开始 / 仪表盘 / 最后一行日志；点开始后弹窗选场地 |
+| 主页 `panel_run` | 从上到下：配速 / 距离 → 配速抖动 → 开始按钮 → 实时仪表盘 → 电池提示。**不放日志**（v1.12.0 起）；点开始时弹自定义弹窗选场地 |
 | 统计 `panel_stats` | 成绩汇总 + 分场地 + 最近记录 |
 | 上手 `panel_start` | 使用教程 / openid / 取码脚本 |
-| 设置 `panel_settings` | 主题 / 说明 / 开源仓库 / 署名 |
+| 设置 `panel_settings` | 主题 / 轨迹毛刺 / 说明 / 开源仓库 / 署名 |
 
 新增非打卡功能请加到【设置】页，不要堆回主页。
 

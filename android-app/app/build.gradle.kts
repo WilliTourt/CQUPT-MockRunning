@@ -28,8 +28,8 @@ android {
         targetSdk = 34
         // 版本号直接写在这里，不依赖任何分支。规则与清单见 AGENT.md §5.1 / §5.2
         // versionCode = MAJOR*10000 + MINOR*100 + PATCH
-        versionCode = 11103
-        versionName = "1.11.3"
+        versionCode = 11200
+        versionName = "1.12.0"
     }
 
     signingConfigs {

@@ -62,6 +62,40 @@
                 android:textSize="15sp" />
         </LinearLayout>
 
+        <!-- 轨迹毛刺：默认关闭 = 光滑轨迹；打开 = 多圈错位 + 毛刺/突起 -->
+        <TextView
+            style="@style/Label"
+            android:layout_marginTop="22dp"
+            android:text="@string/l_burrs" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/box"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:lineSpacingExtra="2dp"
+                android:text="@string/burrs_hint"
+                android:textColor="@color/fg_dim"
+                android:textSize="13sp" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/swBurrs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:contentDescription="@string/l_burrs" />
+        </LinearLayout>
+
         <!-- ═══════════ 说明 ═══════════ -->
         <TextView
             style="@style/Label"

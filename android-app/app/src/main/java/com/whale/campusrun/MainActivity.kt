@@ -20,12 +20,15 @@
 package com.whale.campusrun
 
 import android.Manifest
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -35,9 +38,11 @@ import android.os.PowerManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
@@ -66,7 +71,6 @@ class MainActivity : AppCompatActivity(), RunListener {
     private lateinit var tvPaceInfo: TextView
     private lateinit var tvBatches: TextView
     private lateinit var tvServer: TextView
-    private lateinit var tvLastLog: TextView
 
     // —— 四个 panel（ScrollView 就是 panel 的根，切 visibility 即可）——
     private lateinit var panelRun: ScrollView
@@ -154,7 +158,6 @@ class MainActivity : AppCompatActivity(), RunListener {
         tvPaceInfo = findViewById(R.id.tvPaceInfo)
         tvBatches = findViewById(R.id.tvBatches)
         tvServer = findViewById(R.id.tvServer)
-        tvLastLog = findViewById(R.id.tvLastLog)
 
         // ── 上手页 ──
         etOpenid = findViewById(R.id.etOpenid)
@@ -301,7 +304,6 @@ class MainActivity : AppCompatActivity(), RunListener {
         onState(RunController.state)
         refreshRunButton()
         val buf = RunController.logSnapshot()
-        tvLastLog.text = buf.lastOrNull() ?: getString(R.string.log_hint_short)
         if (buf.isEmpty()) welcome()
     }
 
@@ -382,13 +384,17 @@ class MainActivity : AppCompatActivity(), RunListener {
     // ---------------------------------------------------------------- 打卡
 
     private fun welcome() {
-        log("鲸鲸约跑 v${BuildConfig.VERSION_NAME} · 由 WilliTourt的蓝色大肥鱼 🐟 编写")
-        log("")
-        log("本程序不申请定位权限，也不会打开 GPS。")
-        log("① openid 在右上角【设置】里填，连一次场地；")
-        log("② 回到本页设好配速 → 点【开始打卡】并选择区域。")
-        log("开始之后就可以退出了：锁屏、切走、揣兜里都行。")
-        log("这段时间你就去操场上挨个摄像头刷脸。")
+        // 屏幕上的日志框去掉了，这几句引导写进日志缓冲，【日志】页能看到。
+        val lines = listOf(
+            "鲸鲸约跑 v${BuildConfig.VERSION_NAME} · 由 WilliTourt的蓝色大肥鱼 🐟 编写",
+            "",
+            "本程序不申请定位权限，也不会打开 GPS。",
+            "① openid 在【上手】页填，连一次场地；",
+            "② 回到主页设好配速 → 点【选择场地 & 开始打卡】。",
+            "开始之后就可以退出了：锁屏、切走、揣兜里都行。",
+            "这段时间你就去操场上挨个摄像头刷脸。"
+        )
+        lines.forEach { RunController.logFromUi(it) }
     }
 
     private fun openid(): String = prefs.getString("openid", "").orEmpty().trim()
@@ -537,23 +543,46 @@ class MainActivity : AppCompatActivity(), RunListener {
     ) {
         val previous = prefs.getString("placeCode", "").orEmpty()
         var selected = candidates.indexOfFirst { it.placeCode == previous }
-        val items = candidates.map { it.toString() }.toTypedArray()
 
-        lateinit var dialog: AlertDialog
-        dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.area_picker_title)
-            .setSingleChoiceItems(items, selected) { _, which ->
-                selected = which
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true
+        // 不用 AlertDialog：它的窗口背景是系统 Material 样式，四角会露出一圈灰白，
+        // 和 App 这套圆角卡片完全不搭。这里用 Dialog + 透明窗口背景，
+        // 卡片自己画（dialog_area_picker.xml，白底 18dp 圆角 + 1dp 描边）。
+        val view = layoutInflater.inflate(R.layout.dialog_area_picker, null)
+        val rows = view.findViewById<LinearLayout>(R.id.areaRows)
+        val btnCancel = view.findViewById<Button>(R.id.btnAreaCancel)
+        val btnStart = view.findViewById<Button>(R.id.btnAreaStart)
+
+        val dialog = Dialog(this)
+        dialog.setContentView(view)
+        dialog.setCanceledOnTouchOutside(true)
+
+        fun render() {
+            rows.removeAllViews()
+            candidates.forEachIndexed { i, area ->
+                val row = layoutInflater
+                    .inflate(R.layout.item_area_option, rows, false) as TextView
+                val on = i == selected
+                row.text = area.toString()
+                row.setBackgroundResource(
+                    if (on) R.drawable.area_option_on else R.drawable.area_option
+                )
+                row.setTextColor(
+                    ContextCompat.getColor(this, if (on) R.color.on_accent else R.color.fg)
+                )
+                row.setOnClickListener {
+                    selected = i
+                    render()
+                }
+                rows.addView(row)
             }
-            .setNegativeButton(R.string.dlg_cancel, null)
-            .setPositiveButton(R.string.b_run, null)
-            .create()
-        dialog.show()
+            // 一个都没选（首次使用）时不让点
+            btnStart.isEnabled = selected >= 0
+            btnStart.alpha = if (selected >= 0) 1f else 0.4f
+        }
+        render()
 
-        val positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-        positive.isEnabled = selected >= 0
-        positive.setOnClickListener {
+        btnCancel.setOnClickListener { dialog.dismiss() }
+        btnStart.setOnClickListener {
             val area = candidates.getOrNull(selected) ?: return@setOnClickListener
             dialog.dismiss()
             savePrefs(area.placeCode)
@@ -568,6 +597,16 @@ class MainActivity : AppCompatActivity(), RunListener {
                 burrs = burrs
             )
             refreshRunButton()
+        }
+
+        dialog.show()
+        // 窗口必须透明，宽度取屏幕的 88%，剩下的交给卡片自己
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.88f).toInt(),
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         }
     }
 
@@ -629,9 +668,13 @@ class MainActivity : AppCompatActivity(), RunListener {
 
     // ---------------------------------------------------------------- 日志
 
-    /** 主页不铺日志，只在摘要条里显示最后一行；完整日志在【日志】页。 */
+    /**
+     * 主页不再显示日志摘要（那个小框去掉了），完整日志只在【日志】页看。
+     * 这个回调仍然要留着 —— [RunController] 会把每一行同时写进自己的缓冲，
+     * 【日志】页读的就是那份，不依赖这里。
+     */
     override fun log(line: String) {
-        ui.post { tvLastLog.text = line }
+        // 主页不显示
     }
 
     private fun logStack(where: String, t: Throwable) {

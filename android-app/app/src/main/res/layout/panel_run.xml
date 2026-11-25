@@ -14,11 +14,11 @@
         android:paddingStart="16dp"
         android:paddingTop="14dp"
         android:paddingEnd="16dp">
+
         <!-- ═══════════ 跑步参数 ═══════════ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
             android:baselineAligned="false"
             android:orientation="horizontal">
 
@@ -100,81 +100,25 @@
             android:textColor="@color/fg_dim"
             android:textSize="13sp" />
 
-        <!-- 轨迹毛刺：默认关闭 = 光滑轨迹；打开 = 多圈错位 + 毛刺/突起 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/box"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="14dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="10dp"
-            android:paddingBottom="10dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/l_burrs"
-                    android:textColor="@color/fg"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:lineSpacingExtra="2dp"
-                    android:text="@string/burrs_hint"
-                    android:textColor="@color/fg_dim"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <androidx.appcompat.widget.SwitchCompat
-                android:id="@+id/swBurrs"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:contentDescription="@string/l_burrs" />
-        </LinearLayout>
-
-        <!-- 电池优化状态：深度 Doze 会连 wake lock 一起忽略，只有进白名单才彻底 -->
-        <TextView
-            android:id="@+id/tvBattery"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:background="@drawable/box"
-            android:lineSpacingExtra="4dp"
-            android:padding="12dp"
-            android:text="@string/batt_unknown"
-            android:textColor="@color/fg_dim"
-            android:textSize="13sp" />
-
-        <!-- 主按钮：开始 ↔ 结束，同一个 -->
+        <!-- ═══════════ 主按钮：开始 ↔ 结束，同一个 ═══════════ -->
+        <!-- 放在配速抖动下面，而不是页面最顶上 —— 顶到头的话大拇指够不着 -->
         <Button
             android:id="@+id/btnRun"
             android:layout_width="match_parent"
             android:layout_height="62dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="18dp"
             android:background="@drawable/btn_solid"
             android:text="@string/b_run"
             android:textAllCaps="false"
             android:textColor="@color/on_accent"
-            android:textSize="20sp"
+            android:textSize="18sp"
             android:textStyle="bold" />
 
-        <!-- ─────────── 仪表盘 ─────────── -->
+        <!-- ═══════════ 仪表盘 ═══════════ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="18dp"
             android:background="@drawable/box"
             android:orientation="vertical"
             android:padding="14dp">
@@ -268,18 +212,17 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- 日志只在【日志】页看，这里给个摘要入口 -->
+        <!-- 电池优化状态：深度 Doze 会连 wake lock 一起忽略，只有进白名单才彻底 -->
         <TextView
-            android:id="@+id/tvLastLog"
+            android:id="@+id/tvBattery"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="18dp"
             android:background="@drawable/box"
-            android:ellipsize="end"
-            android:maxLines="3"
+            android:lineSpacingExtra="4dp"
             android:padding="12dp"
-            android:text="@string/log_hint_short"
-            android:textColor="@color/log"
+            android:text="@string/batt_unknown"
+            android:textColor="@color/fg_dim"
             android:textSize="13sp" />
     </LinearLayout>
 </ScrollView>
